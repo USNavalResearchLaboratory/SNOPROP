@@ -34,7 +34,7 @@ The constants used for the tests are saved in test_constants.py
 
 
 ----------- Use ----------------
-Create a python file. Import the Integrator class. Create a dictionary with the parameters listed below.
+Create a python file and import snoprop. Then define a dictionary with the desired simulation parameters.
 The shortest possible input deck might look something like this:
     import snoprop
     params = {
