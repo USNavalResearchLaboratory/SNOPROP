@@ -22,36 +22,36 @@ THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES,
 
 
 ----------- Installation ----------
-The program uses Numpy, Scipy, and Matplotlib extensively. In addition, the program uses Numba, a JIT compiler, to accelerate the math.
+Install SNOPROP by entering the root snoprop directory and running the command "pip install ."
+
+The program uses Numpy, Scipy, and Matplotlib extensively. In addition, the program uses Numba (version >=0.42), a JIT compiler, to accelerate the math.
 All of these are included by default with the Anaconda python distribution. This is the easiest way to use SNOPROP.
-Requires Numba (version >= 0.42). You may want to double-check that Conda installed at minimum this version. You can type "conda list" to see the installed version of Numba.
 
 
 ------------ Testing ---------------
-Tests are found in the tests/ folder. You can run them with
-      python tests/run_scripts.py [-v]
-where -v is optional for more verbose logging
-This will run all existing tests and report the outcome. The constants used for the tests are saved in tests/constants.py
+Tests can be run with the snoprop.run_tests(v) command, where v is optional boolean for more verbose logging.
+The constants used for the tests are saved in test_constants.py
 
 
 ----------- Use ----------------
 Create a python file. Import the Integrator class. Create a dictionary with the parameters listed below.
 The shortest possible input deck might look something like this:
-    from Integrator import Integrator
+    import snoprop
     params = {
         # Specify simulation parameters here
     }
-    sim = Integrator(params)
+    sim = snoprop.Simulation(params)
     sim.run()
     
 You can specify the number of threads to use with syntax like the following:
     NUMBA_NUM_THREADS=4 python simulate.py
+
 You may also run it step-by-step with the sim.move() function
 You can retrieve the simulation position with sim.getZ() and the field intensities with sim.getIS(), sim.getIL(), sim.getIA()
+
 If you save restarts, you can just load the object from the restart file as so
-    sim = pickle.load('restart_file','rb')
+
+sim = pickle.load('restart_file','rb')
     sim.run()
 
-Input parameters are detailed in the user guide.
-
-
+Input parameters are detailed in the NRL memo report user guide.

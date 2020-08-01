@@ -8,12 +8,12 @@ import numpy as np
 from collections import Iterable
 import time
 import sys, os
-from FileIO import FileIO
+from .FileIO import FileIO
 import math
 import csv
 from scipy import interpolate
 #from PMPB import pmpb
-import NumbaMath
+from .NumbaMath import calcNeMPI, getRHS
 from timeit import default_timer as timer
 import scipy.ndimage as nd
 from scipy.linalg import eig_banded
@@ -40,7 +40,7 @@ class Timer():
             res += '{:.6f} of total ({:.4g}s) spent on {:}'.format(tsplit/ttot,tsplit,self.sarr[i])+'\r\n'
         return res
 
-class Integrator:
+class Simulation:
     # Constants here. Units are SI.
     c = 299792458. # speed of light in m/s
     e0 = 8.854e-12 # SI vacuum permittivity
@@ -84,7 +84,7 @@ class Integrator:
             if p not in possible_params:
                 bad_params.append(p)
         if len(missing_params)>0:
-            print('Must specify these parameters for the integrator:')
+            print('Must specify these parameters for the simulation:')
             print(missing_params)
         if len(bad_params)>0:
             print('Unrecognized parameters in input deck:')
@@ -113,10 +113,10 @@ class Integrator:
         self.include_energy_loss *= self.include_ionization
         self.include_fwm, self.include_kerr, self.include_group_delay = params['include_fwm'], params['include_kerr'], params['include_group_delay']
         self.include_gvd = params['include_gvd']
-        # Include Stokes beam only if SRS is on
-        self.include_stokes = self.include_raman
+        # Include Stokes beam only if SRS is on (or manually turned on/off)
+        self.include_stokes = params['include_stokes'] if 'include_stokes' in params else self.include_raman
         # Include Anti-Stokes beam only if SRS is on (or manually turned on/off)
-        self.include_antistokes = self.include_raman*params['include_antistokes'] if 'include_antistokes' in params else self.include_raman
+        self.include_antistokes = params['include_antistokes'] if 'include_antistokes' in params else self.include_raman
         self.n2Kerr *= self.include_kerr
         self.n2Raman *= self.include_raman
         #self.include_stokes = params['include_stokes'] if 'include_stokes' in params else self.include_raman
@@ -141,6 +141,9 @@ class Integrator:
             quit()
         self.tlen = params['tlen']
         self.t_clip = params['t_clip'] if 't_clip' in params else 0
+        if self.t_clip > (self.tend-self.tstart)/2.0:
+            print('"t_clip" parameter must be less than half of the total t range')
+            quit()
         self.rlen = params['rlen']
         self.ion_method = params['ionization_method'] if 'ionization_method' in params else 'MPI'
         self.lLv = params['wavelength']
@@ -455,7 +458,7 @@ class Integrator:
                     elif radialFunc != False:
                         pumpPulseI *= radialFunc(self.rr)
                     else:
-                        pumpPulseI *= np.exp(-2*np.square(self.rr/sigmaR[i])) # radial profile
+                        pumpPulseI *= np.exp(-2*np.square(self.rr/sigmaR[i])) # radial profile 
 
                     pumpPulsesI.append(pumpPulseI)
                     pumpPulsesI[i] *= efrac[i]/efrac[0]* self.getEn(pumpPulsesI[0])/self.getEn(pumpPulsesI[i]) # scale pulse energy relative to first
@@ -747,7 +750,7 @@ class Integrator:
 
     def calculateIonization(self):
  #       if self.ionMethod == 'MPI':
-        NumbaMath.calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
+        calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
                             (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
                             self.ve, self.ne,
                             (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA, self.e0, self.c, self.NH2O, self.lS,self.lL,self.lA, self.IMPI, self.veC, self.viC)
@@ -765,19 +768,8 @@ class Integrator:
             self.constants_gen() # initialize all constants for the integration
             self.logInit() # write a short log to file
 
-            self.RHSEuler = NumbaMath.getRHS(self.constants,self.includes,euler=True)
-            self.RHSCN = NumbaMath.getRHS(self.constants,self.includes,euler=False)
-
-            #NumbaMath.RHS((self.AS,self.AL,self.AA), # previous step fields in 
-            #              (self.AS,self.AL,self.AA), # fields with which to calculate new dAdz
-            #              (dASdz0,dALdz0,dAAdz0), # ddz in 
-            #              False, # Use average of ddz in and new ddz to compute fields out?
-            #              (ASnext, ALnext, AAnext), # fields out
-            #              (dASdz0, dALdz0, dAAdz0), # ddz out
-            #              True, # Save ddz out?
-            #              False, # Compute error from input fields?
-            #              (self.WMPI_NH2O_S, self.WMPI_NH2O_L, self.WMPI_NH2O_A), # WMPI in
-            #              self.ne, self.ve, eikz0, self.constants, self.dz, self.includes) # more stuff
+            self.RHSEuler = getRHS(self.constants,self.includes,euler=True)
+            self.RHSCN = getRHS(self.constants,self.includes,euler=False)
 
         # Ionization
         if self.include_ionization:

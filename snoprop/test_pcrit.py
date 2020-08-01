@@ -7,16 +7,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../')
-from Integrator import Integrator 
+from .simulation import Simulation
+from .Tests import Test
 from scipy.optimize import curve_fit
-from Tests import Test
 
 
 def getDivergenceAngle(params, frac=.25):
     # Run a simulation with parameters params and return the divergence angle of the resulting beam
     # frac is the last fraction of the beam to use when measuring divergence
-    sim = Integrator(params)
+    sim = Simulation(params)
     zarr = []
     rarr = []
 
@@ -63,34 +62,33 @@ def fn(constants):
         'include_gvd': False,
         'adaptive_zstep': True,
 
-        'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
-        'toffset': [0.], # Offset for the multi-pulses
-        'efrac': [1.], # Energy fraction in each pulse
-        'pulse_intensity_radius_e2': [1e-4*np.sqrt(2./np.log(2.))],
-        'Ibackground': 1e0,
-        'focal_length': 1e10,
+        'profile_L': {
+            'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
+            'toffset': [0.], # Offset for the multi-pulses
+            'efrac': [1.], # Energy fraction in each pulse
+            'pulse_radius_e2': [1e-4*np.sqrt(2./np.log(2.))],
+            'energy': 0.035e-3, # Pulse energy in J
+            'focal_length': 1e10,
+        },
+        'IBackground': 1e0,
+        'N0': 33.3679e27,
         'zrange': [0., 1.0],
         'trange': [0., 1e-10],
         'tlen': 4,
         'rrange': [0., 1e-3], 
         'rlen': 150, 
-        'energy': 0.035e-3, # Pulse energy in J
-        'plot2D_rlim': [0,200e-6], # 2D plotting radial limits
-        'plot1D_rlim': [0,200e-6], # 1D plotting radial limits
         'file_output': False,
-        'plot_real_time': False,
-        'ionization_method': 'IMPI',#'IMPI',#'PMPB',
         'radial_filter': False,
         'console_logging_interval': 0,
     }
     for key, val in constants.items(): # Add constants
         params[key] = val
 
-    sim = Integrator(params)
+    sim = Simulation(params)
 
     nL = sim.nL # get nLaser from the simulation calculation
     Pcrit = np.pi*.61**2*params['wavelength']**2/(8*nL*params['n2Kerr']) # According to Boyd 7.1.10
-    print('pcrit is '+str(Pcrit)+', frac is '+str(8e6/Pcrit))
+    #print('pcrit is '+str(Pcrit)+', frac is '+str(8e6/Pcrit))
     tau = (sim.tend - sim.tstart)
     Ecrit = tau * Pcrit
 
@@ -100,7 +98,7 @@ def fn(constants):
     guess = 0.9*Ecrit
     step = 0.05*Ecrit
     previousAngleSign = 1
-    params['energy'] = guess
+    params['profile_L']['energy'] = guess
     angle, quality = getDivergenceAngle(params)
     if angle<0:
         return False # Shouldn't be converging for our initial guess
@@ -114,7 +112,7 @@ def fn(constants):
         else: # Need to keep marching
             guess += previousAngleSign*step
             #print('no flip. guess is '+str(guess) +' and angle is '+str(angle))
-            params['energy'] = guess
+            params['profile_L']['energy'] = guess
         angle, quality = getDivergenceAngle(params)
         n += 1
         if n > 20: # Failed to find Ecrit.

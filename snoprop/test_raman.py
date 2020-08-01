@@ -7,10 +7,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../')
-from Integrator import Integrator 
+from .simulation import Simulation
+from .Tests import Test
 from scipy.optimize import curve_fit
-from Tests import Test
 
 
 # Here we will test whether the Raman growth matches Boyd's theory in Eq 10.3.38-10.3.39
@@ -29,25 +28,24 @@ def fn(constants):
         'include_gvd': False,
         'adaptive_zstep': False,
 
-        'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
-        'toffset': [0.], # Offset for the multi-pulses
-        'efrac': [1.], # Energy fraction in each pulse
-        'pulse_intensity_radius_e2': [Rpulse],
-        'Ibackground': 1e0,
-        'focal_length': 1e10, # collimated beam
+        'profile_L': {
+            'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
+            'toffset': [0.], # Offset for the multi-pulses
+            'efrac': [1.], # Energy fraction in each pulse
+            'energy': 0.001e-3, # Pulse energy in J
+            'pulse_radius_e2': [Rpulse],
+            'focal_length': 1e10, # collimated beam
+        },
+        'IBackground': 1e0,
+        'N0': 33.3679e27,
         'zrange': [0., 1.0],
         'trange': [0., 10e-10],
         'tlen': 4,
         'rrange': [0., 3e-3], 
         'rlen': 800, 
-        'energy': 0.001e-3, # Pulse energy in J
-        'plot2D_rlim': [0,200e-6], # 2D plotting radial limits
-        'plot1D_rlim': [0,200e-6], # 1D plotting radial limits
         'file_output': False,
-        'plot_real_time': False,
-        'ionization_method': 'IMPI',#'IMPI',#'PMPB',
         'radial_filter': False,
-        'console_logging_interval': 20,
+        'console_logging_interval': 0,
     }
     for key, val in constants.items(): # Add constants
         params[key] = val
@@ -57,7 +55,7 @@ def fn(constants):
     log = []
 
     # Set up the sim
-    sim = Integrator(params)
+    sim = Simulation(params)
     
     # Let's manually set the fields
     Rcenter = params['rrange'][-1]*.5 # Cut off our simulations before they get to the end of the box to avoid bad results

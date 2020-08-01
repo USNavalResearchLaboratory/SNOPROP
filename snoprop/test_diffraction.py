@@ -7,10 +7,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../')
-from Integrator import Integrator 
+from .simulation import Simulation
+from .Tests import Test
 from scipy.optimize import curve_fit
-from Tests import Test
 
 
 
@@ -26,31 +25,30 @@ def fn(constants):
         'include_group_delay': False,
         'include_gvd': False,
         'adaptive_zstep': True,
-
-        'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
-        'toffset': [0.], # Offset for the multi-pulses
-        'efrac': [1.], # Energy fraction in each pulse
-        'pulse_intensity_radius_e2': [Rbeam],
-        'Ibackground': 1e0,
-        'focal_length': 1e10, # collimated beam
+ 
+        'profile_L': {
+            'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
+            'toffset': [0.], # Offset for the multi-pulses
+            'efrac': [1.], # Energy fraction in each pulse
+            'pulse_radius_e2': [Rbeam],
+            'energy': 0.01e-3, # Pulse energy in J
+            'focal_length': 1e10, # collimated beam
+        },
+        'IBackground': 1e0,
+        'N0': 33.3679e27,
         'zrange': [0., 0.4],
         'trange': [0., 1e-10],
         'tlen': 4,
         'rrange': [0., 1e-3], 
         'rlen': 200, 
-        'energy': 0.01e-3, # Pulse energy in J
-        'plot2D_rlim': [0,200e-6], # 2D plotting radial limits
-        'plot1D_rlim': [0,200e-6], # 1D plotting radial limits
         'file_output': False,
-        'plot_real_time': False,
-        'ionization_method': 'IMPI',#'IMPI',#'PMPB',
         'radial_filter': False,
         'console_logging_interval': 0,
     }
     for key, val in constants.items(): # Add constants
         params[key] = val
 
-    sim = Integrator(params)
+    sim = Simulation(params)
 
     zarr = []
     rarr = []

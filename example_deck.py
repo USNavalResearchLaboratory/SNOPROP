@@ -1,22 +1,17 @@
-# The source code has been authored by federal and non-federal employees. To the extent that a federal employee is an author of a portion of this software or a derivative work thereof, no copyright is claimed by the United States Government, as represented by the Secretary of the Navy ("GOVERNMENT") under Title 17, U.S. Code. All Other Rights Reserved. To the extent that a non-federal employee is an author of a portion of this software or a derivative work thereof, the work was funded in whole or in part by the U.S. Government, and is, therefore, subject to the following license: The Government has unlimited rights to use, modify, reproduce, release, perform, display, or disclose the computer software and computer software documentation in whole or in part, in any manner and for any purpose whatsoever, and to have or authorize others to do so. Any other rights are reserved by the copyright owner.
-
-# Neither the name of NRL or its contributors, nor any entity of the United States Government may be used to endorse or promote products derived from this software, nor does the inclusion of the NRL written and developed software directly or indirectly suggest NRL's or the United States Government's endorsement of this product. 
-
-# THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-
-import sys
 import numpy as np
-sys.path.insert(0, '/path/to/snoprop/') # Directory containing Integrator.py
-from Integrator import Integrator
+import snoprop
 
-r0 = .3e-3 # Annulus major diameter
-rwidth = .02e-3 # Annulus minor width
-radialProfile = lambda r: np.exp(-(r-r0)**2/(2*rwidth**2))
+# Before specifying the parameter dictionary,
+# we will define a custom radial profile for the Stokes pulse
+r0 = .3e-3 # Annulus major diameter in m
+rwidth = .02e-3 # Annulus minor width in m
+def radialProfile(r):
+    return np.exp(-(r-r0)**2/(2*rwidth**2))
 
-params = {
+params = { # Now we will enter the parameter dictionary
     # Material parameters
     'wavelength': 355e-9, # Pump laser wavelength in vacuum
-    'wV': 2*3.14159*1.019e14, # Raman frequency in water is 101.9 THz
+    'wV': 2*3.14159*1.019e14, # Vibrational frequency in water is 101.9 THz
     'material': 'custom', # We'll supply our own refractive indices for water
     'nS': 1.34927, # Stokes index of refraction
     'nL': 1.35721, # Laser index of refraction
@@ -46,6 +41,14 @@ params = {
     'adaptive_zstep': True, # Toggle adaptive zstep
     'radial_filter': True, # Smooth the electron density at each step
 
+    # Grid parameters
+    'zrange': [0, .011], # Stop the simulation at 1cm
+    'trange': [-25e-12,25e-12], # simulate a 40 ps box
+    't_clip': 5e-12, # Cut off the temporal profile 5ps from the box edge
+    'tlen': 200, # Number of cells in time
+    'rrange': [0., 1e-3], # Radial boundary at 1 mm
+    'rlen': 6000, # Number of cells in radius
+
     # Pulse profiles    
     'profile_L': {
         'pulse_length_fwhm': [10e-12], # Temporal lengths of each pulse
@@ -64,14 +67,6 @@ params = {
         'energy': 2e-06, # Pulse energy in J
     },
 
-    # Grid parameters
-    'zrange': [0, .011], # Stop the simulation at 1cm
-    'trange': [-25e-12,25e-12], # simulate a 40 ps box
-    't_clip': 5e-12, # Cut off the temporal profile 5ps from the box edge
-    'tlen': 200, # Number of cells in time
-    'rrange': [0., 1e-3], # Radial boundary at 1 mm
-    'rlen': 6000, # Number of cells in radius
-
     # Data output
     'save_restart_interval': 0, # Restarts disabled
     'save_scalars_interval': 20, # Interval at which to save scalars
@@ -81,7 +76,7 @@ params = {
         # Individual and total beam spot sizes (FWHM)
         'FWHM_S','FWHM_L','FWHM_A','FWHM_T',
         # Individual and total beam spot sizes (RMS integrated)
-        'RMSSize_S','RMSSize_L','Rmssize_A','RMSSize_T' 
+        'RMSSize_S','RMSSize_L','RMSSize_A','RMSSize_T' 
     ],
     'save_1D_interval': 100, # Interval at which to save 1D data
     'save_1D_which': [ # Select which 1D data to save to file
@@ -94,5 +89,5 @@ params = {
     ],
 }
 
-sim = Integrator(params)
+sim = snoprop.Simulation(params)
 sim.run()

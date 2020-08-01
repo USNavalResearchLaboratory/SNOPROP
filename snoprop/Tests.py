@@ -40,3 +40,38 @@ class Tests:
         resText = "Success" if result else "Failure"
         print("Finished testing")
         print("{}: {:d} passed and {:d} failed.".format(resText,sum(results),len(self.tests) - sum(results)))
+
+
+def run_tests(v=False):
+    import time
+
+    from .test_constants import constants
+
+    tests = Tests()
+
+    from . import test_ionization
+    tests.add(test_ionization.test)
+
+    from . import test_four_wave_mixing
+    tests.add(test_four_wave_mixing.test)
+
+    from . import test_raman
+    tests.add(test_raman.test)
+
+    from . import test_plasma_focusing
+    tests.add(test_plasma_focusing.test)
+
+    from . import test_diffraction
+    tests.add(test_diffraction.test)
+
+    from . import test_linear_focusing
+    tests.add(test_linear_focusing.test)
+
+    from . import test_pcrit
+    tests.add(test_pcrit.test)
+ 
+
+    t0 = time.time()
+    tests.run(constants, verbose=v)
+    t1 = time.time()
+    print("{:.3f} seconds elapsed".format(t1-t0))
