@@ -7,17 +7,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../')
-from Integrator import Integrator 
+from .simulation import Simulation
+from .Tests import Test
 from scipy.optimize import curve_fit
-from Tests import Test
 
 
 
 def fn(constants):
-    Rpulse = 1e-3 # starting beam radius (1/e^2 intensity)
     params = {
-        'include_plasma_refraction': True,
+        'include_plasma_refraction': False,
         'include_ionization': False,
         'include_energy_loss': False,
         'include_raman': False,
@@ -27,101 +25,68 @@ def fn(constants):
         'include_gvd': False,
         'adaptive_zstep': True,
 
-        'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
-        'toffset': [0.], # Offset for the multi-pulses
-        'efrac': [1.], # Energy fraction in each pulse
-        'pulse_intensity_radius_e2': [Rpulse],
-        'Ibackground': 1e0,
-        'focal_length': 1e10, # collimated beam
+        'profile_L': {
+            'pulse_length_fwhm': [1e10], # Temporal lengths of each pulse (in vacuum)
+            'toffset': [0.], # Offset for the multi-pulses
+            'efrac': [1.], # Energy fraction in each pulse
+            'pulse_radius_e2': [500e-6*np.sqrt(2./np.log(2.))], # Multiply HWHM by sqrt(2/log(2)) to get 1/e^2 intensity radius
+            'energy': 0.01e-3, # Pulse energy in J
+            'focal_length': 0.5,
+        },
+        'IBackground': 1e0,
+        'N0': 33.3679e27,
         'zrange': [0., 1.0],
-        'trange': [0., 10e-10],
+        'trange': [0., 1e-10],
         'tlen': 4,
         'rrange': [0., 3e-3], 
-        'rlen': 800, 
-        'energy': 0.001e-3, # Pulse energy in J
-        'plot2D_rlim': [0,200e-6], # 2D plotting radial limits
-        'plot1D_rlim': [0,200e-6], # 1D plotting radial limits
+        'rlen': 1000, 
         'file_output': False,
-        'plot_real_time': False,
         'radial_filter': False,
         'console_logging_interval': 0,
     }
     for key, val in constants.items(): # Add constants
         params[key] = val
 
-    sim = Integrator(params)
+    sim = Simulation(params)
 
     zarr = []
     rarr = []
     Iarr = []
-    
 
-    # Make a graded index plasma lens to test refraction
-    dlens = 0.01
-    fplasma = 0.5
-    alpha = sim.nL/(2*dlens*fplasma)
-    ne0 = alpha * 2*sim.nL*sim.wL**2 * sim.e0*sim.me/(sim.e**2)
-    nearr = ne0*sim.rr**2 # Propagating through dlens distance of this plasma should focus a collimated beam at fplasma.
-
-    
-    def nFromNe(ne):
-        return np.sqrt(1-ne*sim.e**2/(sim.me*sim.e0*sim.wL**2))
-    narr = nFromNe(nearr)
-    
-    #fig, ax = plt.subplots(2)
-    #ax[0].plot(sim.r0, narr[0,:])
-    #ax[0].set_xlabel('Radius (m)')
-    #ax[0].set_ylabel('n(r)')
-    #ax[1].plot(sim.r0, nearr[0,:])
-    #ax[1].set_xlabel('Radius (m)')
-    #ax[1].set_ylabel('Ne(r)')
-    #plt.show()
-
-
-
-
-    sim.ne = nearr
-    
-    plasmaLens = True
-    stride = 10 # only save the beam size every 10 steps.
     while (sim.z < sim.zend):
-        if sim.z > dlens and plasmaLens == True:
-            sim.ne *= 0.
-            plasmaLens = False
         sim.move()
-
-        if sim.step%stride == 0:
+        if sim.step%10==0:
             FL = np.mean(sim.getIL(),axis=0)
             r0 = sim.r0
             try:
-                fitRes, fitConf = curve_fit(lambda x,I0,w:I0*np.exp(-2*x**2/(w*np.abs(w))),r0,FL,p0=[FL[0],sim.r0[-1]/5])
+                #if sim.step%100==0:
+                #    print('step',sim.step)
+                fitRes, fitConf = curve_fit(lambda x,I0,w:I0*np.exp(np.max([x*0-100,-2*x**2/(w*np.abs(w))],axis=0)),r0,FL,p0=[FL[0],sim.r0[-1]/5])
             except:
                 fitRes = [0.,0.]
             zarr.append(sim.z)
-
             rarr.append(fitRes[1])
             Iarr.append(np.mean(sim.getIL(), axis=0))
     zarr = np.array(zarr)
     rarr = np.array(rarr)
     Iarr = np.array(Iarr)
 
-    #fig, ax = plt.subplots(1, 2, figsize=(8,4), dpi=120)
-    #ax = ax.flatten()
-    #plt.sca(ax[0])
-    #plt.plot(zarr,rarr, label='measured')
-    #plt.legend()
-    #plt.sca(ax[1])
-    #plt.imshow(Iarr[:,:100].T, origin='lower', aspect='auto')
-    #plt.colorbar()
+    
+
+    #fig, ax = plt.subplots(2, figsize=(8,4), dpi=120)
+    #ax[0].plot(zarr,rarr)
+    #ax[1].imshow(Iarr[:,:100].T, origin='lower', aspect='auto')
     #plt.show()
+    
 
-
-    expect = fplasma
-    actual = zarr[np.where(rarr == np.min(rarr))[0][0]]
-    tolerance = 0.05*actual # We will allow 5% tolerance
-    result = np.abs(actual - expect) < tolerance
-    message = "Found plasma lens focus of {:.6} m compared to expected {:.6} m".format(actual, expect)
+    fexpect = params['profile_L']['focal_length']
+    idx_actual = np.where(rarr == np.min(rarr))[0][0] # What z index has the minimum beam radius?
+    factual = zarr[idx_actual]
+    
+    tolerance = 0.05*fexpect # We will allow 5% tolerance
+    result = np.abs(factual - fexpect) < tolerance
+    message = "Found focal length of {:.6} m compared to expected {:.6} m".format(factual, fexpect)
     return result, message
     
-test = Test("Plasma focusing", fn)
+test = Test("Linear focusing", fn)
 

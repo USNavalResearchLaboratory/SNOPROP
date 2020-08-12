@@ -4,51 +4,22 @@
 
 # THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-# This script will run the tests in this directory (using the constants in constants.py) and print the status.
+constants = {
+    'material': 'custom',
+    'nS': 1.34927, # Stokes index of refraction
+    'nL': 1.35721, # Laser index of refraction
+    'nA': 1.36624, # Anti-Stokes index of refraction
+    'nSg': 1.40398, # Stokes group index
+    'nLg': 1.42694, # Laser group index
+    'nAg': 1.45577, # Anti-Stokes group index
 
-from Tests import Test,Tests
-import time, sys
-
-from constants import constants
-
-if len(sys.argv) != 2:
-    print('Usage: python run_test.py [Test Name]')
-    quit()
-
-tests = Tests()
-
-import test_ionization
-tests.add(test_ionization.test)
-
-import test_four_wave_mixing
-tests.add(test_four_wave_mixing.test)
-
-import test_raman
-tests.add(test_raman.test)
-
-import test_plasma_focusing
-tests.add(test_plasma_focusing.test)
-
-import test_diffraction
-tests.add(test_diffraction.test)
-
-import test_linear_focusing
-tests.add(test_linear_focusing.test)
-
-import test_pcrit
-tests.add(test_pcrit.test)
-
-found=False
-tests2 = Tests()
-for t in tests.tests:
-    if t.name == sys.argv[1]:
-        found=True
-        tests2.add(t)
-if not found:
-    print('Must specify valid test name. Must be one of ',[t.name for t in tests.tests])
-    quit()
-
-t0 = time.time()
-tests2.run(constants, verbose=True)
-t1 = time.time()
-print("{:.3f} seconds elapsed".format(t1-t0))
+    'wV': 2*3.14159*1.019e14,
+    'Uion': 9.5,
+    'sigmaC': 1e-19,
+    'IMPI': 1e18,
+    'eta': 1.7e11,
+    'IBackground': 1e2,
+    'n2Kerr': 5.0e-20,
+    'n2Raman': -1.7e-20j,
+    'wavelength': 355e-9,
+}

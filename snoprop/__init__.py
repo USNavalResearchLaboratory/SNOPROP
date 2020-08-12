@@ -4,14 +4,5 @@
 
 # THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-constants = {
-    'wV': 2*3.14159*1.019e14, # The Raman line is about 3400/cm, which is 101.9 THz.
-    'Uion': 9.5 * 1.602e-19, # in J
-    'sigmaC': 1e-19, # collision cross section from Hafizi 2016 paper
-    'IMPI': 1e18, # multiphoton ionization intensity From Hafizi 2016 paper
-    'eta': 1.7e11, # Electron reattachment rate (plasma lifetime) in s^-1 (Hafizi 2016 paper)
-    'IBackground': 1e2, # Background intensity in W/m^2
-    'n2Kerr': 5.0e-20, # index of refraction n = n0 + n2*I. xNR will be calculated from this.
-    'n2Raman': -1.7e-20j, # specify xRS/xNL. Should be imaginary.
-    'wavelength': 355e-9,
-}
+from snoprop.simulation import Simulation
+from snoprop.Tests import run_tests

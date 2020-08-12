@@ -7,10 +7,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../')
-from Integrator import Integrator 
+from .simulation import Simulation
 from scipy.optimize import curve_fit
-from Tests import Test
+from .Tests import Test
 import time
 
 
@@ -35,23 +34,22 @@ def fn(constants):
         'include_gvd': False,
         'adaptive_zstep': False,
 
-        'pulse_length_fwhm': [1e10], # temporally flat pulse
-        'toffset': [0.], # Offset for the multi-pulses
-        'efrac': [1.], # Energy fraction in each pulse
-        'pulse_intensity_radius_e2': [Rpulse],
-        'Ibackground': 1e0,
-        'focal_length': 1e10, # collimated beam
+        'profile_L': {
+            'pulse_length_fwhm': [1e10], # temporally flat pulse
+            'toffset': [0.], # Offset for the multi-pulses
+            'efrac': [1.], # Energy fraction in each pulse
+            'pulse_radius_e2': [Rpulse],
+            'energy': energy, # Pulse energy in J
+            'focal_length': 1e10, # collimated beam
+        },
+        'IBackground': 1e0,
+        'N0': 33.3679e27,
         'zrange': [0., 1.0],
         'trange': [0., 100e-12],
         'tlen': 200,
         'rrange': [0., 5e-3], 
         'rlen': 200, 
-        'energy': energy, # Pulse energy in J
-        'plot2D_rlim': [0,200e-6], # 2D plotting radial limits
-        'plot1D_rlim': [0,200e-6], # 1D plotting radial limits
         'file_output': False,
-        'plot_real_time': False,
-        'ionization_method': 'IMPI',#'IMPI',#'PMPB',
         'radial_filter': False,
         'console_logging_interval': 0,
         'dz': 1e-9,
@@ -63,7 +61,7 @@ def fn(constants):
     # Equation from Bahman's paper predicts the following electron distribution as a function of time for constant field:
     # Ne(t) = NH2O*WMPI/(eta-vi)*(1-exp((vi-eta)*t))
     # Set up the sim
-    sim = Integrator(params)
+    sim = Simulation(params)
     sim.calculateIonization() # Calculate electron density
     ne = sim.ne
     AL_axis = np.abs(sim.AL[:,0])
