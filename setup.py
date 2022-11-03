@@ -13,7 +13,7 @@ setup(
     install_requires=[
         'numpy',
         'scipy',
-        'numba>=0.42',
+        'numba>=0.42,<0.54',
     ],
     python_requires='>=3.5, <4',
     classifiers=[
