@@ -32,7 +32,7 @@ In the third method, the user may set `material` to `` `vacuum' `` which assumes
 | `material` | yes | string or function | Material name. May be set to `'vacuum'` to ignore all material effects, `'custom'` in which case several optional parameters for refractive indices, group indices, and group velocity dispersion parameters are required (see below), or a python function accepting as input a float (wavelength in m) and returning a float (refractive index). |
 | `wV` | yes | float | Material vibration frequency (1/s) |
 | `Uion` | yes | float | Material ionization energy (eV) |
-| `sigmaC` | yes | float | Collision cross section (\mathrm{$m^2$) |
+| `sigmaC` | yes | float | Collision cross section ($\mathrm{m}^2$) |
 | `IMPI` | yes | float | Multiphoton ionization characteristic intensity (W/m$^2$) |
 | `eta` | yes | float | Electron loss rate (1/s) |
 | `IBackground` | yes | float | Initial background intensity for all fields (W/m^2). This can be overridden if `IBackground` is specified as an element of the pulse profiles `profile_S`, `profile_L`, `profile_A` (see Pulse profile section below). |
