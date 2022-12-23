@@ -20,7 +20,7 @@ the next sections.
 
 The parameter dictionary must include material parameters for the homogeneous background medium.
 
-The user may specify refractive indices in one of three methods. In the first method, the `material` parameter is set to `` 'custom' `` and the user may specify the relevant linear refractive indices $n_n$ (for $n \elem \{S,L,A\}$), group indices $n_{gn}$, and GVD parameters $\beta''_n$ for each beam in the input parameter dictionary.
+The user may specify refractive indices in one of three methods. In the first method, the `material` parameter is set to `` 'custom' `` and the user may specify the relevant linear refractive indices $n_n$ (for subscript $n \in \{S,L,A\}$), group indices $n_{gn}$, and GVD parameters $\beta''_n$ for each beam in the input parameter dictionary.
 
 In the second method, the user sets the `material` parameter to a python function which accepts a float (wavelength in m) and returns a float (index of refraction). The index of refraction, group indices, and GVD parameters for each beam are calculated from the refractive index data. With this method, the user can input custom refractive index data from tables or using the Sellmeier equation.
 
@@ -32,7 +32,7 @@ In the third method, the user may set `material` to `` `vacuum' `` which assumes
 | `material` | yes | string or function | Material name. May be set to `'vacuum'` to ignore all material effects, `'custom'` in which case several optional parameters for refractive indices, group indices, and group velocity dispersion parameters are required (see below), or a python function accepting as input a float (wavelength in m) and returning a float (refractive index). |
 | `wV` | yes | float | Material vibration frequency (1/s) |
 | `Uion` | yes | float | Material ionization energy (eV) |
-| `sigmaC` | yes | float | Collision cross section (m$^2$) |
+| `sigmaC` | yes | float | Collision cross section (\mathrm{$m^2$) |
 | `IMPI` | yes | float | Multiphoton ionization characteristic intensity (W/m$^2$) |
 | `eta` | yes | float | Electron loss rate (1/s) |
 | `IBackground` | yes | float | Initial background intensity for all fields (W/m^2). This can be overridden if `IBackground` is specified as an element of the pulse profiles `profile_S`, `profile_L`, `profile_A` (see Pulse profile section below). |
