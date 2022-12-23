@@ -20,7 +20,7 @@ the next sections.
 
 The parameter dictionary must include material parameters for the homogeneous background medium.
 
-The user may specify refractive indices in one of three methods. In the first method, the `material` parameter is set to `` 'custom' `` and the user may specify the relevant linear refractive indices `n_n` (for n=S,L,A), group indices n_gn, and GVD parameters beta_n for each beam in the input parameter dictionary.
+The user may specify refractive indices in one of three methods. In the first method, the `material` parameter is set to `` 'custom' `` and the user may specify the relevant linear refractive indices $n_n$ (for $n \elem \{S,L,A\}$), group indices $n_{gn}$, and GVD parameters $\beta''_n$ for each beam in the input parameter dictionary.
 
 In the second method, the user sets the `material` parameter to a python function which accepts a float (wavelength in m) and returns a float (index of refraction). The index of refraction, group indices, and GVD parameters for each beam are calculated from the refractive index data. With this method, the user can input custom refractive index data from tables or using the Sellmeier equation.
 
@@ -32,12 +32,12 @@ In the third method, the user may set `material` to `` `vacuum' `` which assumes
 | `material` | yes | string or function | Material name. May be set to `'vacuum'` to ignore all material effects, `'custom'` in which case several optional parameters for refractive indices, group indices, and group velocity dispersion parameters are required (see below), or a python function accepting as input a float (wavelength in m) and returning a float (refractive index). |
 | `wV` | yes | float | Material vibration frequency (1/s) |
 | `Uion` | yes | float | Material ionization energy (eV) |
-| `sigmaC` | yes | float | Collision cross section (m^2) |
-| `IMPI` | yes | float | Multiphoton ionization characteristic intensity (W/m^2) |
+| `sigmaC` | yes | float | Collision cross section (m$^2$) |
+| `IMPI` | yes | float | Multiphoton ionization characteristic intensity (W/m$^2$) |
 | `eta` | yes | float | Electron loss rate (1/s) |
 | `IBackground` | yes | float | Initial background intensity for all fields (W/m^2). This can be overridden if `IBackground` is specified as an element of the pulse profiles `profile_S`, `profile_L`, `profile_A` (see Pulse profile section below). |
-| `n2Kerr` | yes | float | Kerr index n_2 (m^2/W). This is defined as in n = n_0 + n_2*I with I given in [W/m^2] |
-| `n2Raman` | yes | complex | Raman index; should be imaginary (m^2/W) |
+| `n2Kerr` | yes | float | Kerr index $n_2$ (m$^2$/W). This is defined as in $n = n_0 + n_2I$ with $I$ an intensity in [W/m$^2$] |
+| `n2Raman` | yes | complex | Raman index; should be imaginary (m$^2$/W) |
 | `effective_mass` | no | float | Effective electron mass (fraction of electron mass) (default 1.0) |
 | `nS` | no | float | Stokes refractive index (req. if `material = 'custom'`) |
 | `nL` | no | float | Laser refractive index (req. if `material = 'custom'`) |
@@ -45,10 +45,10 @@ In the third method, the user may set `material` to `` `vacuum' `` which assumes
 | `nSg` | no | float | Stokes group index (req. if `material = 'custom'`) |
 | `nLg` | no | float | Laser group index (req. if `material = 'custom'`) |
 | `nAg` | no | float | Anti-Stokes group index (req. if `material = 'custom'}) |
-| `gvd_bS` | no | float | Stokes GVD parameter (s^2/m) (req. if `material = 'custom'`) |
-| `gvd_bL` | no | float | Laser GVD parameter (s^2/m) (req. if `material = 'custom'`) |
-| `gvd_bA` | no | float | Anti-Stokes GVD parameter (s^2/m) (req. if `material = 'custom'`) |
-| 'Ne_func' | no | function | May specify externally-generated electron density. The function should accept two floats (time in s and radius in m) and return an electron density float in 1/m^3. This option requires setting `include_ionization` to False |
+| `gvd_bS` | no | float | Stokes GVD parameter (s$^2$/m) (req. if `material = 'custom'`) |
+| `gvd_bL` | no | float | Laser GVD parameter (s$^2$/m) (req. if `material = 'custom'`) |
+| `gvd_bA` | no | float | Anti-Stokes GVD parameter (s$^2$/m) (req. if `material = 'custom'`) |
+| 'Ne_func' | no | function | May specify externally-generated electron density. The function should accept two floats (time in s and radius in m) and return an electron density float in 1/m$^3$. This option requires setting `include_ionization` to False |
 
 
 
@@ -132,7 +132,7 @@ With each of these methods, if a background intensity is specified in the pulse 
 | `focal_length` | no | float | Focus distance (m). Must specify either this input or the `axicon_angle` input. |
 | `axicon_angle` | no | float | Axicon angle for axicon-focused beam (rad). Must specify either this input or the `focal_length` input. |
 | `energy` | no | float | Total energy of the entire pulse train (J). Must specify either this input or the `intensity` input. |
-| `intensity` | no | float | Peak intensity of the pulse train (W/m^2). Must specify either this input or the `energy` input. |
+| `intensity` | no | float | Peak intensity of the pulse train (W/m$^2$). Must specify either this input or the `energy` input. |
 | `radial_data` | no | [[float], [float]] | Radial data for the pulse profile. The first array is radius in m and the second is fluence (which will be normalized by the code to reach the specified pulse energy). |
 | `temporal_data` | no | [[float], [float]] | Temporal data for the pulse profile. The first array is time in s and the second is power (which will be normalized by the code to reach the specified pulse energy). |
 | `2D_data` | no | 2D complex | Spatiotemporal electric field envelope profile. The user may specify the entire electric field envelope as a 2D complex array where the first axis is time $\tau$ and the second axis is radius $r$. The resulting profile will be normalzed to the correct power and a background field added (if a background field has been specified either globablly or for this particular profile). The field will be normalized by the code to reach the specified pulse energy. |
