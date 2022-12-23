@@ -54,4 +54,4 @@ If you save restarts, you can just load the object from the restart file as so
 sim = pickle.load('restart_file','rb')
     sim.run()
 
-Input parameters are detailed in the NRL memo report user guide.
+Input parameters for version 1.0 are detailed in the NRL memo report user guide. Input parameters including version 1.1 updates are listed in userguide.md.
