@@ -465,7 +465,7 @@ class Simulation:
                     quit()
                 if 'energy' in params:
                     pumpProfileI *= params['energy']/self.getEn(pumpProfileI) # Now scale the whole multi-pulse E-field profile to get the right energy.
-                elif 'intensity' in params: : # then intensity must be specified
+                elif 'intensity' in params: # then intensity must be specified
                     pumpProfileI *= params['intensity']/np.max(pumpProfileI)
                 else:
                     print('Must include either total energy or peak intensity for the '+name+' pulse')

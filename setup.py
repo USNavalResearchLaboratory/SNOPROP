@@ -11,9 +11,9 @@ setup(
     download_url = 'https://github.com/USNavalResearchLaboratory/SNOPROP/archive/v1.1.tar.gz',
     keywords = ['simulation','lasers'],
     install_requires=[
-        'numpy<1.24',
+        'numpy',
         'scipy',
-        'numba>=0.42',#,<0.54',
+        'numba>=0.42,<0.54',
     ],
     python_requires='>=3.5, <3.9',
     classifiers=[
