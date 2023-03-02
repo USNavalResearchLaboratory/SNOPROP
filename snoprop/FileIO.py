@@ -33,6 +33,7 @@ class FileIO:
         self.simFolders = list(set(self.simFolders)) # Select unique (in case there are duplicates)
         if any([os.path.exists(f) for f in self.simFolders]): # If any folders already exist
             askDelete = input("Simulation folders already exist. Delete them? (y/n)")
+            #askDelete = "y"
             print("input is "+askDelete)
             if askDelete == "y":
                 print("Deleting existing folders")

@@ -50,15 +50,15 @@ class Simulation:
     hb = 1.0545718e-34 # Reduced Planck's constant
     NH2O = 0 # Users will input neutral density if using ionization
 
-    iterMax = 12
     CFL = 0.8 # Courant-Friedrichs-Lewy scaling factor. Z step size will be this factor times the max dz calculated from the cfl number.
     failed = False
+    hankelReady=False
     
     def __init__(self, params):
 
         # Check that the input deck parameters are valid
         # List the required and optional parameters
-        required_params = ['profile_L', 'zrange', 'trange', 'tlen', 'rrange', 'rlen',
+        required_params = ['zrange', 'trange', 'tlen', 'rrange', 'rlen',
                            'wV', 'Uion',
                            'sigmaC', 'IMPI', 'eta', 'IBackground', 'include_plasma_refraction',
                            'include_ionization', 'include_energy_loss', 'include_raman',
@@ -66,11 +66,15 @@ class Simulation:
                            'n2Raman', 'wavelength']
         optional_params = [
             'effective_mass', 'material', 'nS', 'nL', 'nA', 'nSg', 'nLg', 'nAg', 'gvd_bS', 'gvd_bL', 'gvd_bA',
-            'include_stokes', 'include_antistokes', 'adaptive_zstep','radial_filter','radial_filter_interval','radial_filter_type','radial_filter_field',
-            'profile_S','profile_A','dz','t_clip',
-            'file_output','console_logging_interval','save_restart_interval','save_scalars_interval','save_scalars_which','save_1D_interval',
-            'save_1D_which','save_2D_interval','save_2D_which',
-            'lS','lL','lA','N0',
+            'include_stokes', 'include_antistokes', 'include_collisional_ionization', 'include_radial_derivatives',
+            'adaptive_zstep','radial_filter','radial_filter_interval','radial_filter_type','radial_filter_field',
+            'profile_L','profile_S','profile_A','dz','dz_min','t_clip',
+            'file_output','console_logging_interval','save_restart_interval',
+            'save_scalars_interval','save_scalars_z_interval','save_scalars_which',
+            'save_1D_interval','save_1D_z_interval','save_1D_which',
+            'save_2D_interval','save_2D_z_interval','save_2D_which',
+            'lS','lL','lA','N0','cap_Ne','warn_critical','Ne_func',
+            'iter_max',
         ]
         possible_params = required_params + optional_params
 
@@ -101,12 +105,12 @@ class Simulation:
                 quit()
             else:
                 self.NH2O = params['N0']
-
         self.wV, self.Uion, self.sigmaC, self.IMPI = params['wV'], params['Uion']*self.eVtoJ, params['sigmaC'], params['IMPI']
         self.eta, self.IBackground, self.n2Kerr, self.n2Raman = params['eta'], params['IBackground'], params['n2Kerr'], params['n2Raman']
         if 'me' in params: self.me = params['me']
-        self.veC = self.NH2O*self.sigmaC * self.e / (np.sqrt(2) * self.me) * 2.0# Electron collision frequency constants (Havizi 2016 Eq. 9). Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
-        self.viC = self.e**2/(2*self.me*self.Uion) * 4.0 # Avalanche ionization rate constants. Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
+        self.veC = self.NH2O*self.sigmaC * self.e / (np.sqrt(2) * self.me) * 2.0# Electron collision frequency constants (Hafizi 2016 Eq. 9). Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
+        self.include_collisional_ionization = params['include_collisional_ionization'] if 'include_collisional_ionization' in params else True
+        self.viC = self.e**2/(2*self.me*self.Uion) * 4.0 * self.include_collisional_ionization # Avalanche ionization rate constants. Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
         
         self.include_energy_loss, self.include_raman = params['include_energy_loss'], params['include_raman']
         #self.include_plasma_refraction *= self.include_ionization
@@ -117,20 +121,34 @@ class Simulation:
         self.include_stokes = params['include_stokes'] if 'include_stokes' in params else self.include_raman
         # Include Anti-Stokes beam only if SRS is on (or manually turned on/off)
         self.include_antistokes = params['include_antistokes'] if 'include_antistokes' in params else self.include_raman
+        self.include_radial_derivatives = params['include_radial_derivatives'] if 'include_radial_derivatives' in params else True
         self.n2Kerr *= self.include_kerr
         self.n2Raman *= self.include_raman
         #self.include_stokes = params['include_stokes'] if 'include_stokes' in params else self.include_raman
         #self.include_antistokes = params['include_antistokes'] if 'include_antistokes' in params else self.include_raman
         self.adaptive_zstep = params['adaptive_zstep'] if 'adaptive_zstep' in params else True
+        self.adaptive_zstep_last = 0
         self.radial_filter = params['radial_filter'] if 'radial_filter' in params else False
         self.radial_filter_type = params['radial_filter_type'] if 'radial_filter_type' in params else 'gaussian'
         self.radial_filter_field = params['radial_filter_field'] if 'radial_filter_field' in params else 'electron density'
         self.radial_filter_interval = params['radial_filter_interval'] if 'radial_filter_interval' in params else 1
+        self.cap_Ne = params['cap_Ne'] if 'cap_Ne' in params else False
+        self.warn_critical = params['warn_critical'] if 'warn_critical' in params else True
+        if 'Ne_func' in params and params['Ne_func'] != False:
+            if params['include_ionization'] == False:
+                self.Ne_func = params['Ne_func']
+            else:
+                print('Cannot include custom electron density with Ne_func if include_ionization = True')
+                quit()
+        else: self.Ne_func = False
+        self.iterMax = params['iter_max'] if 'iter_max' in params else 12
 
         # Integration parameters (all units are SI)
-        self.profile_L = params['profile_L']
+        self.profile_L = params['profile_L'] if 'profile_L' in params else False
         self.profile_S = params['profile_S'] if 'profile_S' in params else False
         self.profile_A = params['profile_A'] if 'profile_A' in params else False
+        if (self.profile_L == False) and (self.profile_S == False) and (self.profile_A == False):
+            print('Must specify a profile for the laser, Stokes, or anti-Stokes beam')
         
         self.material = params['material'] if 'material' in params else 'vacuum'#Segelstein_water'
         self.zstart, self.zend = params['zrange']
@@ -148,6 +166,7 @@ class Simulation:
         self.ion_method = params['ionization_method'] if 'ionization_method' in params else 'MPI'
         self.lLv = params['wavelength']
         self.dzMax = params['dz'] if 'dz' in params else 0 # We will calculate the courant condition later if need be
+        self.dzMin = params['dz_min'] if 'dz_min' in params else 0 # We will calculate the courant condition later if need be
 
         # Compute a few more physical constants from the input parameters
         
@@ -255,19 +274,22 @@ class Simulation:
         # Basic output parameters
         self.saveRestartInterval = params['save_restart_interval'] if 'save_restart_interval' in params else 0 # Interval in frames for full saves
         self.save2DInterval = params['save_2D_interval'] if 'save_2D_interval' in params else 0 # Interval in frames for 2D saves
+        self.save2DZInterval = params['save_2D_z_interval'] if 'save_2D_z_interval' in params else 0 # Interval in frames for 2D saves
         self.save2DWhich = params['save_2D_which'] if 'save_2D_which' in params else [] # Interval in frames for 2D saves
         self.saveScalarsInterval = params['save_scalars_interval'] if 'save_scalars_interval' in params else 0 # Interval in frames for scalars
+        self.saveScalarsZInterval = params['save_scalars_z_interval'] if 'save_scalars_z_interval' in params else 0 # Interval in frames for scalars
         if 'save_scalars_which' in params and params['save_scalars_which'] != []:
             self.saveScalarsWhich = ['step','z'] + params['save_scalars_which']
         else: self.saveScalarsWhich = []
         self.save1DInterval = params['save_1D_interval'] if 'save_1D_interval' in params else 0 # Interval in frames for 1D saves
+        self.save1DZInterval = params['save_1D_z_interval'] if 'save_1D_z_interval' in params else 0 # Interval in frames for 1D saves
         self.save1DWhich = params['save_1D_which'] if 'save_1D_which' in params else [] # Interval in frames for 1D saves
 
         # Switches for managing output
         self.saveRestarts = self.saveRestartInterval > 0
-        self.save2D = self.save2DInterval > 0 and len(self.save2DWhich) != 0
-        self.saveScalars = self.saveScalarsInterval > 0 and len(self.saveScalarsWhich) != 0
-        self.save1D = self.save1DInterval > 0
+        self.save2D = ((self.save2DInterval > 0) or self.save2DZInterval > 0) and len(self.save2DWhich) != 0
+        self.saveScalars = ((self.saveScalarsInterval > 0) or (self.saveScalarsZInterval > 0)) and len(self.saveScalarsWhich) != 0
+        self.save1D = ((self.save1DInterval > 0) or (self.save1DZInterval > 0))
         self.file_output = params['file_output'] if 'file_output' in params else True # Set this to false to avoid writing any output files
         if self.file_output == False:
             self.save2D, self.saveScalars, self.saveRestarts, self.save1D = False, False, False, False # Cut all output if params['file_output'] is false
@@ -309,20 +331,24 @@ class Simulation:
         #print('dz total',self.dzMax,self.c/(self.c/self.dr * .1 + (1/self.nLg-1/self.nAg)/self.dt))
         #quit()
         self.dz = self.dzMax
-        self.dzMin = self.dzMax / 10**4
+        if self.dzMin==0: self.dzMin = self.dzMax / 10**4
         self.zlen = int(np.ceil((self.zend-self.zstart)/self.dz)) + 1
 
         # Initialize the grid
         self.r0 = np.linspace(self.rstart, self.rend-self.dr, self.rlen)#+self.dr/2.
         self.t0 = np.linspace(self.tstart, self.tend, self.tlen)
         self.rr, self.tt = np.meshgrid(self.r0,self.t0) # Indexing will be A(t,r)
+        self.ve = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.ne = np.zeros((self.tlen,self.rlen), dtype=realType)
-        self.WMPI_NH2O = np.zeros((self.tlen,self.rlen), dtype=realType)
+        self.te = np.zeros((self.tlen,self.rlen), dtype=realType)              # comment GMP: added array te (set all elements to 0)
+        self.te += 0.03                                                        # comment GMP: initialized array te (room temperature)
+        if self.Ne_func != False:
+            self.ne += self.Ne_func(self.tt,self.rr)
+        self.WMPI_NH2O   = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.WMPI_NH2O_S = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.WMPI_NH2O_L = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.WMPI_NH2O_A = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.plasmaEnergy = 0.
-        self.ve = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.rrinv = np.zeros((self.tlen,self.rlen))
         self.rrinv[:,1:] = self.rr[:,1:]**-1
         self.rrinv[:,0] = 0 # Otherwise it is infinite. This is ok since the derivative must be zero at r=0 anyways.
@@ -333,41 +359,13 @@ class Simulation:
 
         # Set up radial filter if need be
         if self.radial_filter and self.radial_filter_type == 'hankel':
-            rcenter = self.r0+self.dr/2.
-            V = np.pi*((rcenter+0.5*self.dr)**2 - (rcenter-0.5*self.dr)**2)
-            A1 = 2*np.pi*(rcenter-0.5*self.dr)
-            A2 = 2*np.pi*(rcenter+0.5*self.dr)
-            self.filter_lambda = np.sqrt(V)
-            T1 = A1/(self.dr*V)
-            T2 = -(A1 + A2)/(self.dr*V)
-            T3 = A2/(self.dr*V)
-            # Boundary conditions
-            T2[0] += T1[0]
-            T2[-1] -= T3[-1]
-            # Symmetrize the matrix S = Lambda * T * Lambda^-1
-            # This is the root-volume weighting
-            T1[1:] *= self.filter_lambda[1:]/self.filter_lambda[:-1]
-            T3[:-1] *= self.filter_lambda[:-1]/self.filter_lambda[1:]
-            a_band_upper = np.zeros((2,self.rlen))
-            a_band_upper[0,:] = T1 # T3->T1 thanks to scipy packing and symmetry
-            a_band_upper[1,:] = T2
-            vals, self.Hi = eig_banded(a_band_upper) # Columns of Hi are the radial modes
-            vals, self.Hi = np.flip(vals), np.flip(self.Hi,axis=1) # Make the first column the lowest frequency
-            # Save the filter k space profile as well. We want to filter out about the top half of modes.
-            #self.radialFilterShape = np.ones(len(self.r0))
-            #self.radialFilterShape[int(self.rlen/2):] = 0
-            #i1, i2 = int(self.rlen*.25), int(self.rlen*.75)
-            #r1, r2 = self.r0[i1],self.r0[i2]
-            #self.radialFilterShape[i1:i2] = np.cos(np.pi*(self.r0[i1:i2]-r1)/(r2-r1))*.5 + .5
-            self.radialFilterShape = np.cos(np.pi*(np.cos(np.pi*(self.r0/self.r0[-1]))*.5+.5))*-.5+.5
-
-            
-
-
+            self.setupHankel()
 
         # Initialize the fields. Since I scales as exp(-2(t/sigmaT)^2), E scales as exp(-(t/sigmaT)^2)
         # Assume intensity scales as I0*exp(-2(t/sigmaT)^2)*exp(-2(r/sigmaR)^2)
-        fields_to_setup = [[self.AL,self.lLv,self.nL,self.profile_L,'profile_L']] # User should always input Laser field
+        fields_to_setup = []
+        if self.profile_L != False:
+            fields_to_setup.append([self.AL,self.lLv,self.nL,self.profile_L,'profile_L']) # Optional Stokes field input
         if self.profile_S != False:
             fields_to_setup.append([self.AS,self.lSv,self.nS,self.profile_S,'profile_S']) # Optional Stokes field input
         if self.profile_A != False:
@@ -387,11 +385,14 @@ class Simulation:
                 else:
                     print('"2D_data" element must have shape (tlen, rlen)! Currently has shape ',params['2D_data'].shape)
             else:
-                params_needed = ['pulse_length_fwhm','toffset','efrac','energy','focal_length']
+                params_needed = ['pulse_length_fwhm','toffset','efrac']
                 for p in params_needed:
                     if p not in params:
                         print('Must either specify "2D_data" or specify parameter "'+p+'" in '+name+' dictionary')
                         quit()
+                if 'energy' not in params and 'intensity' not in params:
+                    print('Must specify either "energy" or "intensity" in '+name+' dictionary')
+                    quit()
                 k = 2*np.pi*n/wavelength
 
                 tau = np.array(params['pulse_length_fwhm'])
@@ -408,7 +409,6 @@ class Simulation:
                 toffset = np.array(params['toffset'])
                 efrac = np.array(params['efrac'])
                 efrac = efrac / np.sum(efrac) # Normalize it if it wasn't already
-                f = params['focal_length']
                 if 'pulse_radius_e2' in params:
                     Rpulse = np.array(params['pulse_radius_e2'])
                     sigmaR = Rpulse
@@ -420,17 +420,12 @@ class Simulation:
                     if (len(radialData) == 0) and (radialFunc == False):
                         print('Must specify radial profile for the pulse '+name)
                         quit()
-                energy = params['energy']
 
                 if len(temporalData)==0 and temporalFunc == False:
                     sigmaT = tau/2*np.sqrt(2/np.log(2)) # 1/e^2 half-length
-                focusAngle = np.arctan2(sigmaR[0], f)
-                w0L = wavelength/n/np.pi/focusAngle
-                zRL = np.pi*w0L**2/(wavelength/n)
 
 
                 # Start with the laser profile
-                Rz = -1*(f+zRL**2/f) # Radius of curvature to get the desired focal length.
                 pumpPulsesI = []
                 # Set up the different pulses separately before combining them
                 for i in range(len(tau)):
@@ -439,12 +434,14 @@ class Simulation:
                         pumpPulseI = temporalFunc2(self.tt)
                     elif temporalFunc != False:
                         pumpPulseI = temporalFunc(self.tt)
+                    elif self.tlen==1:
+                        pumpPulseI = np.ones(self.tt.shape)
                     else:
                         pumpPulseI = np.exp(-2*np.square((self.tt-toffset[i])/sigmaT[i]))
                     if self.t_clip != 0: # Clip near edges to avoid boundary issues
                         tmid = (self.tend+self.tstart)/2.0
                         width_no_clip = (self.tend-self.tstart)/2.0 - self.t_clip
-                        pumpPulseI[(np.abs(self.tt - tmid) > width_no_clip)] = 0.0 
+                        pumpPulseI[(np.abs(self.tt - tmid) > width_no_clip)] = 0.0
                     if len(radialData) != 0:
                         rad_r, rad_d = radialData
                         if rad_r[-1] < self.rend: # Make it go to zero at large r if necessary
@@ -461,16 +458,34 @@ class Simulation:
                         pumpPulseI *= np.exp(-2*np.square(self.rr/sigmaR[i])) # radial profile 
 
                     pumpPulsesI.append(pumpPulseI)
+
                     pumpPulsesI[i] *= efrac[i]/efrac[0]* self.getEn(pumpPulsesI[0])/self.getEn(pumpPulsesI[i]) # scale pulse energy relative to first
                 pumpPulsesI = np.array(pumpPulsesI)
                 pumpProfileI = np.sum(pumpPulsesI, axis=0)
                 if (pumpProfileI<0).any():
                     print('Final pump energy must not be negative!')
                     quit()
-                pumpProfileI *= energy/self.getEn(pumpProfileI) # Now scale the whole multi-pulse E-field profile to get the right energy.
+                if 'energy' in params:
+                    pumpProfileI *= params['energy']/self.getEn(pumpProfileI) # Now scale the whole multi-pulse E-field profile to get the right energy.
+                else: # then intensity must be specified
+                    pumpProfileI *= params['intensity']/np.max(pumpProfileI)
                 pumpProfileE = self.getEField(pumpProfileI,n).astype(complexType)
-                pumpProfileE *= np.exp(1.j*k*self.rr**2/2/Rz) # wavefront curvature (initial focusing)
 
+                if 'axicon_angle' in params:
+                    angle = params['axicon_angle']*-1
+                    if angle == 0: angle = 1e-10                    
+                    pumpProfileE *= np.exp(1.j*k*self.rr*np.sin(angle)) # wavefront curvature (initial focusing) for axicon lens
+                elif 'focal_length' in params:
+                    f = params['focal_length']
+                    #focusAngle = np.arctan2(sigmaR[0], f)
+                    #w0L = wavelength/n/np.pi/focusAngle
+                    #zRL = np.pi*w0L**2/(wavelength/n)
+                    Rz = -1*f#(f+zRL**2/f) # Radius of curvature to get the desired focal length.
+                    pumpProfileE *= np.exp(1.j*k*self.rr**2/2/Rz) # wavefront curvature (initial focusing)
+                else:
+                    #if ('focal_length' in params) + ('axicon_angle' in params) != 1:
+                    print('Must specify one of "focal_length" or "axicon_angle" in '+name)
+                    quit()
 
                 # Add the pulse profile to the field
                 field[:,:] += self.getA(pumpProfileE) # AL is the envelope field, defined with E=A exp(iwt) + c.c.
@@ -480,19 +495,35 @@ class Simulation:
                 Amin = self.getA(self.getEField(IBackground,n))
                 #field[np.abs(field)<Amin] = Amin
                 field[:,:] += Amin
-        # Add backgrounds to these fields if they didn't have specified profiles        
+               
+            
+        # Add backgrounds to these fields if they didn't have specified profiles
+        # Also set update flags
         if self.profile_S == False:
             ASmin = self.getA(self.getEField(self.IBackground,self.nS))
             #self.AS[np.abs(self.AS)<ASmin] = ASmin
             self.AS += ASmin
+            self.updateS=True
+        else:
+            self.updateS = params['update'] if 'update' in params else True
+        if self.profile_L == False:
+            ALmin = self.getA(self.getEField(self.IBackground,self.nL))
+            #self.AS[np.abs(self.AS)<ASmin] = ASmin
+            self.AL += ALmin
+            self.updateL=True
+        else:
+            self.updateL = params['update'] if 'update' in params else True
         if self.profile_A == False:
             AAmin = self.getA(self.getEField(self.IBackground,self.nA))
             #self.AA[np.abs(self.AA)<AAmin] = AAmin
             self.AA += AAmin
+            self.updateA=True
+        else:
+            self.updateA = params['update'] if 'update' in params else True
 
         self.energy = self.getEnS()+self.getEnL()+self.getEnA()
             
-        self.z = 0
+        self.z = self.zstart
 
         self.timerStart = time.time()*1000.0
         self.stepTime = time.time()
@@ -502,9 +533,37 @@ class Simulation:
 
 
 
+    def setupHankel(self):
+        self.hankelReady=True
+        rcenter = self.r0+self.dr/2.
+        V = np.pi*((rcenter+0.5*self.dr)**2 - (rcenter-0.5*self.dr)**2)
+        A1 = 2*np.pi*(rcenter-0.5*self.dr)
+        A2 = 2*np.pi*(rcenter+0.5*self.dr)
+        self.filter_lambda = np.sqrt(V)
+        T1 = A1/(self.dr*V)
+        T2 = -(A1 + A2)/(self.dr*V)
+        T3 = A2/(self.dr*V)
+        # Boundary conditions
+        T2[0] += T1[0]
+        T2[-1] -= T3[-1]
+        # Symmetrize the matrix S = Lambda * T * Lambda^-1
+        # This is the root-volume weighting
+        T1[1:] *= self.filter_lambda[1:]/self.filter_lambda[:-1]
+        T3[:-1] *= self.filter_lambda[:-1]/self.filter_lambda[1:]
+        a_band_upper = np.zeros((2,self.rlen))
+        a_band_upper[0,:] = T1 # T3->T1 thanks to scipy packing and symmetry
+        a_band_upper[1,:] = T2
+        vals, self.Hi = eig_banded(a_band_upper) # Columns of Hi are the radial modes
+        vals, self.Hi = np.flip(vals), np.flip(self.Hi,axis=1) # Make the first column the lowest frequency
+        # Save the filter k space profile as well. We want to filter out about the top half of modes.
+        #self.radialFilterShape = np.ones(len(self.r0))
+        #self.radialFilterShape[int(self.rlen/2):] = 0
+        #i1, i2 = int(self.rlen*.25), int(self.rlen*.75)
+        #r1, r2 = self.r0[i1],self.r0[i2]
+        #self.radialFilterShape[i1:i2] = np.cos(np.pi*(self.r0[i1:i2]-r1)/(r2-r1))*.5 + .5
+        self.radialFilterShape = np.cos(np.pi*(np.cos(np.pi*(self.r0/self.r0[-1]))*.5+.5))*-.5+.5
 
-
-
+            
         
 
     # Constants to be simplify the integration
@@ -514,7 +573,7 @@ class Simulation:
         if self.include_kerr is False:
             self.xNR = 0.
 
-        self.cS1 = 1j*self.c/(2*self.nS*self.wS)
+        self.cS1 = 1j*self.c/(2*self.nS*self.wS) * self.include_radial_derivatives
         self.cS2 = (self.nLg-self.nSg)/self.c * self.include_group_delay
         self.cS3 = 3j*self.wS/(self.nS*self.c)*.5*self.xNR
         self.cS4 = 3j*self.wS/(self.nS*self.c)*(self.xRS+self.xNR)
@@ -525,7 +584,7 @@ class Simulation:
         self.cS9 = -self.wS/self.kS/(self.c*self.c)*self.Uion/4./self.e0 * self.include_energy_loss
         self.cS10 = self.gvd_bS/2j * self.include_gvd
 
-        self.cL1 = 1j*self.c/(2*self.nL*self.wL)
+        self.cL1 = 1j*self.c/(2*self.nL*self.wL) * self.include_radial_derivatives
         self.cL2 = 0.
         self.cL3 = 3j*self.wL/(self.nL*self.c)*(self.xRA+self.xNR)
         self.cL4 = 3j*self.wL/(self.nL*self.c)*.5*self.xNR
@@ -536,7 +595,7 @@ class Simulation:
         self.cL9 = -self.wL/self.kL/(self.c*self.c)*self.Uion/4./self.e0 * self.include_energy_loss
         self.cL10 = self.gvd_bL/2j * self.include_gvd
 
-        self.cA1 = 1j*self.c/(2*self.nA*self.wA)
+        self.cA1 = 1j*self.c/(2*self.nA*self.wA) * self.include_radial_derivatives
         self.cA2 = (self.nLg-self.nAg)/self.c * self.include_group_delay
         self.cA3 = 3j*self.wA/(self.nA*self.c)*self.xNR
         self.cA4 = 3j*self.wA/(self.nA*self.c)*(self.xRA+self.xNR)
@@ -599,7 +658,7 @@ class Simulation:
             (self.cA1, self.cA2, self.cA3, self.cA4, self.cA5, self.cA6, self.cA7, self.cA8, self.cA9, self.cA10),
             (self.dt, self.dr, self.tlen, self.rlen)
             )
-        self.includes = (self.include_stokes, self.include_antistokes, self.include_ionization, self.include_plasma_refraction, self.include_energy_loss)
+        self.includes = (self.include_stokes, self.include_antistokes, self.include_ionization, self.include_plasma_refraction, self.include_energy_loss,self.updateS,self.updateL,self.updateA)
 
 
     def radialFilter(self, field):
@@ -616,8 +675,12 @@ class Simulation:
             print("Only Gaussian (real-space) and Hankel (k-space) filters are permitted.")
             print("Please set radial_filter_type to 'gaussian' or 'hankel'")
     def radialHankel(self, v):
+        if not self.hankelReady:
+            self.setupHankel()
         return self.radialScaleAndMultiply(v,self.Hi,self.filter_lambda)
     def invRadialHankel(self, v):
+        if not self.hankelReady:
+            self.setupHankel()
         return self.radialScaleAndMultiply(v,self.Hi.T,self.filter_lambda)
     def radialScaleAndMultiply(self,v, mat, scale):
         v = np.einsum('j,ij...->ij...',scale,v)
@@ -629,7 +692,7 @@ class Simulation:
     def getInten(self, A, n): # Get intensity from field where A is the envelope field (E= A exp(i w t) + c.c.)
         return 4.*np.absolute(A*np.conj(A))*(n/2.*self.e0*self.c) # See e.g. Boyd 2.5.1
     def getFluence(self,inten):
-        return np.sum(inten,axis=0)
+        return np.sum(inten,axis=0)*self.dt
     def getEField(self, I, n): return np.sqrt(I/(n/2*self.e0*self.c))
     def getAFromI(self, I, n): return np.sqrt(I/(n*2*self.e0*self.c))
 
@@ -662,6 +725,9 @@ class Simulation:
     def getAS(self): return self.AS
     def getAL(self): return self.AL
     def getAA(self): return self.AA
+    def getES(self): return self.getEFromA(self.AS)
+    def getEL(self): return self.getEFromA(self.AL)
+    def getEA(self): return self.getEFromA(self.AA)
     def setAS(self,A): self.AS = A.copy()
     def setAL(self,A): self.AL = A.copy()
     def setAA(self,A): self.AA = A.copy()
@@ -751,16 +817,22 @@ class Simulation:
     def calculateIonization(self):
  #       if self.ionMethod == 'MPI':
         calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
-                            (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
-                            self.ve, self.ne,
-                            (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA, self.e0, self.c, self.NH2O, self.lS,self.lL,self.lA, self.IMPI, self.veC, self.viC)
+                  (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
+                  self.ve, self.ne, self.te, # comment GMP: added array te
+                  (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA, self.e0, self.c, self.NH2O, self.lS,self.lL,self.lA, self.IMPI, self.veC, self.viC)
         )
-        
-        if np.sum(self.ne > self.neCrit) > 0:
-            print('Electron density has exceeded the critical density at step {:d}'.format(self.step))
-            print('Ne max = {:.4g}/cm^3, critical density = {:.4g}/cm^3 (calculated for the anti-Stokes beam)'.format(np.max(self.ne)/1e6,self.neCrit/1e6))
-            print('Exiting now')
-            quit()
+        if self.tlen==1:
+            self.ne = (self.WMPI_NH2O/self.eta)
+
+        if self.cap_Ne:
+            self.ne = np.min([self.ne,self.ne*0+self.NH2O],axis=0)
+
+        if self.warn_critical:
+            if np.sum(self.ne > self.neCrit) > 0:
+                print('Electron density has exceeded the critical density at step {:d}'.format(self.step))
+                print('Ne max = {:.4g}/cm^3, critical density = {:.4g}/cm^3 (calculated for the anti-Stokes beam)'.format(np.max(self.ne)/1e6,self.neCrit/1e6))
+                print('Exiting now')
+                quit()
             
     def move(self): # Advance the simulation by one z step.
         self.boundaryConds() # Apply boundary conditions
@@ -830,6 +902,7 @@ class Simulation:
             if(j>self.iterMax):
                 if self.adaptive_zstep:
                     self.dz = self.dz/2.
+                    self.adaptive_zstep_last = self.step
                     self.printIfConsoleOutput('Reducing zstep on step ',self.step,'iteration',j,' New zstep is',self.dz)
                     return
                 else:
@@ -838,8 +911,9 @@ class Simulation:
             j = j+1
         if self.adaptive_zstep:
             # increase zstep if it is converging too fast
-            if (j < 2 and self.dz<self.dzMax): 
+            if ((j <= 2) and (self.dz<self.dzMax) and (self.step-self.adaptive_zstep_last >= 10)): 
                 self.dz = self.dz*2.
+                self.adaptive_zstep_last = self.step
                 self.printIfConsoleOutput('Increasing zstep on step ',self.step,'iteration',j,' New zstep is',self.dz)
                 self.printIfConsoleOutput('error',error)
             if (self.dz < self.dzMin):
@@ -861,15 +935,29 @@ class Simulation:
             
 
         # Saving data
-        if ((self.saveRestarts and self.step%self.saveRestartInterval==0) or (self.saveScalars and self.step%self.saveScalarsInterval==0) or 
-            (self.save2D and self.step%self.save2DInterval==0) or (self.save1D and self.step%self.save1DInterval==0)):
+        saveRestartNow = (self.saveRestarts and self.step%self.saveRestartInterval==0 and self.step != 0)
+        saveScalarsNow = (self.saveScalars and (
+            (self.saveScalarsInterval>0 and self.step%self.saveScalarsInterval==0) or
+            (self.saveScalarsZInterval>0 and (int(np.floor(self.z/self.saveScalarsZInterval)) > int(np.floor((self.z-self.dz)/self.saveScalarsZInterval))))
+        ))
+        save2DNow = (self.save2D and (
+            (self.save2DInterval>0 and self.step%self.save2DInterval==0) or
+            (self.save2DZInterval>0 and (int(np.floor(self.z/self.save2DZInterval)) > int(np.floor((self.z-self.dz)/self.save2DZInterval))))
+        ))
+        save1DNow = (self.save1D and (
+            (self.save1DInterval>0 and self.step%self.save1DInterval==0) or
+            (self.save1DZInterval>0 and (int(np.floor(self.z/self.save1DZInterval)) > int(np.floor((self.z-self.dz)/self.save1DZInterval))))
+        ))
+        
+        if (saveRestartNow or saveScalarsNow or save2DNow or save1DNow):
             IS, IL, IA = self.getIS(), self.getIL(), self.getIA() # We only calculate these if we might need them later.
             IT = (IS+IL+IA)
+            ISmax,ILmax,IAmax = np.max(IS),np.max(IL),np.max(IA)
 
-            if self.saveRestarts and self.step%self.saveRestartInterval==0 and self.step != 0:
+            if saveRestartNow:
                 self.filer.savePickle(self, 'Restart_{:0>6d}'.format(self.step))
 
-            if self.saveScalars and self.step%self.saveScalarsInterval==0:
+            if saveScalarsNow:
                 saveArr = []
                 if 'Energy_T' in self.saveScalarsWhich: # Keep track of whether we already calculated these
                     EnS, EnL, EnA = False, False, False
@@ -904,13 +992,29 @@ class Simulation:
                         saveArr.append(self.getRMSSize(self.getFluence(IA)))
                     elif s == 'RMSSize_T':
                         saveArr.append(self.getRMSSize(self.getFluence(IT)))
+                    elif s == "IS_max":
+                        saveArr.append(ISmax)
+                    elif s == "IL_max":
+                        saveArr.append(ILmax)
+                    elif s == "IA_max":
+                        saveArr.append(IAmax)
+                    elif s == "ES_max":
+                        saveArr.append(self.getEField(ISmax,self.nS))
+                    elif s == "EL_max":
+                        saveArr.append(self.getEField(ILmax,self.nL))
+                    elif s == "EA_max":
+                        saveArr.append(self.getEField(IAmax,self.nA))
+                    elif s == "Ne_max":
+                        saveArr.append(np.max(self.ne))
+                    elif s == "Te_max":
+                        saveArr.append(np.max(self.te))  # comment GMP: added on 01/25/2023
                     else:
                         print('Save scalar option "'+s+'" is not supported.')
                         quit()
                 self.filer.appendRow(self.scalarsFile,saveArr)
 
             # Save 1D
-            if self.save1D and self.step%self.save1DInterval==0:
+            if save1DNow:
                 FS = np.sum(IS, axis=0)*self.dt
                 FL = np.sum(IL, axis=0)*self.dt
                 FA = np.sum(IA, axis=0)*self.dt
@@ -927,6 +1031,18 @@ class Simulation:
                     elif s =='PL': saveDict[s] = self.getP(IL)
                     elif s =='PA': saveDict[s] = self.getP(IA)
                     elif s =='PT': saveDict[s] = self.getP(IT)
+                    elif s =='IS_mid': saveDict[s] = IS[int(self.tlen/2),:]
+                    elif s =='IL_mid': saveDict[s] = IL[int(self.tlen/2),:]
+                    elif s =='IA_mid': saveDict[s] = IA[int(self.tlen/2),:]
+                    elif s =='ES_mid': saveDict[s] = self.getEField(IS[int(self.tlen/2),:],self.nS)
+                    elif s =='EL_mid': saveDict[s] = self.getEField(IL[int(self.tlen/2),:],self.nL)
+                    elif s =='EA_mid': saveDict[s] = self.getEField(IA[int(self.tlen/2),:],self.nA)
+                    elif s =='PhaseS_mid': saveDict[s] = np.angle(self.AS[int(self.tlen/2),:])
+                    elif s =='PhaseL_mid': saveDict[s] = np.angle(self.AL[int(self.tlen/2),:])
+                    elif s =='PhaseA_mid': saveDict[s] = np.angle(self.AA[int(self.tlen/2),:])
+                    elif s =='HankelS_mean': saveDict[s] = np.sqrt(np.sum(np.abs(self.radialHankel(self.getES()))**2,axis=0))
+                    elif s =='HankelL_mean': saveDict[s] = np.sqrt(np.sum(np.abs(self.radialHankel(self.getEL()))**2,axis=0))
+                    elif s =='HankelA_mean': saveDict[s] = np.sqrt(np.sum(np.abs(self.radialHankel(self.getEA()))**2,axis=0))
                     else:
                         print('Save 1D option "'+s+'" is not supported.')
                         quit()
@@ -936,28 +1052,31 @@ class Simulation:
                 #                      'Lineouts_'+str(self.step))
 
             # Save 2D fields
-            if self.save2D and self.step%self.save2DInterval==0:
+            if save2DNow:
                 saveDict = {'rrange':[self.rstart,self.rend],'rlen':self.rlen,'trange':[self.tstart,self.tend],'tlen':self.tlen,'z':self.z}
                 for s in self.save2DWhich:
                     if s =='IS': saveDict[s] = IS.astype(float)
                     elif s =='IL': saveDict[s] = IL.astype(float)
                     elif s =='IA': saveDict[s] = IA.astype(float)
                     elif s =='IT': saveDict[s] = IT.astype(float)
-                    elif s =='AS': saveDict[s] = self.AS.astype(np.complex32)
-                    elif s =='AL': saveDict[s] = self.AL.astype(np.complex32)
-                    elif s =='AA': saveDict[s] = self.AA.astype(np.complex32)
-                    elif s =='ES': saveDict[s] = self.getEFromA(self.AS).astype(float)
-                    elif s =='EL': saveDict[s] = self.getEFromA(self.AL).astype(float)
-                    elif s =='EA': saveDict[s] = self.getEFromA(self.AA).astype(float)
+                    elif s =='AS': saveDict[s] = self.AS.astype(np.complex64)
+                    elif s =='AL': saveDict[s] = self.AL.astype(np.complex64)
+                    elif s =='AA': saveDict[s] = self.AA.astype(np.complex64)
+                    elif s =='ES': saveDict[s] = self.getEFromA(self.AS).astype(np.complex64)
+                    elif s =='EL': saveDict[s] = self.getEFromA(self.AL).astype(np.complex64)
+                    elif s =='EA': saveDict[s] = self.getEFromA(self.AA).astype(np.complex64)
                     elif s =='Ne': saveDict[s] = self.ne.astype(float)
                     else:
                         print('Save 2D option "'+s+'" is not supported.')
                         quit()
                 self.filer.savePickle(saveDict, 'Data2D_{:06d}'.format(self.step))
 
-        if self.include_stokes: self.AS = ASnext
-        self.AL = ALnext
-        if self.include_antistokes: self.AA = AAnext
+        if self.include_stokes and self.updateS:
+            self.AS = ASnext
+        if self.updateL:
+            self.AL = ALnext
+        if self.include_antistokes and self.updateA:
+            self.AA = AAnext
         self.z += self.dz
         self.step += 1
         
