@@ -10,23 +10,23 @@ import numba
 PI = np.pi
 
 
-@numba.njit
+@numba.njit(fastmath=True)
 def dNedtau(WMPI_NH2O,vi,ne,eta):
     return WMPI_NH2O + vi*ne - eta*ne
 
 
-@numba.njit
+@numba.njit(fastmath=True)
 def getI(A,factor):
     return np.real(A*np.conj(A))*(factor*4.)
 
-@numba.njit
+@numba.njit(fastmath=True)
 def easyPow(x,n): # Raises x to the integer power x. Only for small n.
     res = x
     for i in range(n-1):
         res *= x
     return res
 
-@numba.njit
+@numba.njit(fastmath=True)
 def factorial(n):
     res = 1
     for i in range(2,n+1):
@@ -62,6 +62,8 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, constants):
         ve[0,i] = veC*fieldsAvg
         vinext = viC*ve[0,i]*fieldsAvg*fieldsAvg
 
+        if tlen==1:
+            ne[0,i] = WMPI_NH2O[0,i]/(eta - vinext)
 
         for j in range(tlen-1):
 
@@ -185,7 +187,7 @@ def getRHS(constants, includes, euler):
     dr2 = dr*dr
     dt2 = dt*dt
 
-    include_stokes, include_antistokes, include_ionization, include_plasma_refraction, include_energy_loss = includes
+    include_stokes, include_antistokes, include_ionization, include_plasma_refraction, include_energy_loss, updateS, updateL, updateA = includes
     #print('getrhs',constants,includes)
     #print(cL6,cL7,cL8)
     
@@ -215,6 +217,9 @@ def getRHS(constants, includes, euler):
                     ASa2 = AS1*np.conj(AS1)
                     dASdr = rDeriv(AS, ti, ri, rlen, drd)
                     asin = AS[ti,ri] # Grab these values before we write in case AS = ASout
+                else:
+                    AS1, ASa2 = 0,0
+                    
                 AL1 = AL[ti,ri]
                 ALa2 = AL1*np.conj(AL1)
                 dALdr = rDeriv(AL, ti, ri, rlen, drd)
@@ -224,6 +229,8 @@ def getRHS(constants, includes, euler):
                     AAa2 = AA1*np.conj(AA1)
                     dAAdr = rDeriv(AA, ti, ri, rlen, drd)
                     aain = AA[ti,ri]
+                else:
+                    AA1, AAa2 = 0,0
 
                 if include_ionization or include_plasma_refraction or include_energy_loss:
                     ne = Ne[ti,ri]
@@ -236,9 +243,11 @@ def getRHS(constants, includes, euler):
                 Ares = 0
 
                 # Now we will use
-                if include_stokes:
-                    Sres += cS1*(r2Deriv(AS, ti, ri, rlen, dr2) + rinv*dASdr) # Diffraction, SRS, and FWM
-                    if cS2 != 0: Sres += cS2*tDeriv(AS, ti, ri, tlen, dtd) # Group delay
+                if include_stokes and updateS:
+                    Sres += cS1*(r2Deriv(AS, ti, ri, rlen, dr2) + rinv*dASdr) # Diffraction and linear focusing
+                    if tlen>1:
+                        if cS2 != 0: Sres += cS2*tDeriv(AS, ti, ri, tlen, dtd) # Group delay
+                        if cS10 != 0: Sres += cS10 * t2Deriv(AS,ti,ri,tlen,dt2) # Group velocity dispersion
                     if cS3 != 0: Sres += cS3*ASa2*AS1 # self-phase modulation
                     if cS4 != 0: Sres += cS4*ALa2*AS1 # SRS and cross-phase modulation
                     if cS5 != 0: Sres += cS5*AAa2*AS1 # cross-phase modulation
@@ -246,21 +255,24 @@ def getRHS(constants, includes, euler):
                     if cS7 != 0: Sres += cS7*ne*AS1 # Plasma refraction
                     if cS8 != 0: Sres += cS8*ne*ve*AS1 # Plasma energy loss
                     if cS9 != 0: Sres += cS9*WMPI_NH2O_S[ti,ri]*AS1/ASa2 # Plasma energy loss
-                    if cS10 != 0: Sres += cS10 * t2Deriv(AS,ti,ri,tlen,dt2) # Group velocity dispersion
-                    
-                Lres += cL1*(r2Deriv(AL, ti, ri, rlen, dr2) + rinv*dALdr)
-                if cL3 != 0: Lres += cL3*ASa2*AL1
-                if cL4 != 0: Lres += cL4*ALa2*AL1
-                if cL5 != 0: Lres += cL5*AAa2*AL1
-                if cL6 != 0: Lres += cL6*np.conj(AL1)*AS1*AA1*np.conj(eikz)
-                if cL7 != 0: Lres += cL7*ne*AL1
-                if cL8 != 0: Lres += cL8*ne*ve*AL1
-                if cL9 != 0: Lres += cL9*WMPI_NH2O_L[ti,ri]*AL1/ALa2
-                if cL10 != 0: Lres += cL10 * t2Deriv(AL,ti,ri,tlen,dt2)
 
-                if include_antistokes:
+                if updateL:
+                    Lres += cL1*(r2Deriv(AL, ti, ri, rlen, dr2) + rinv*dALdr)
+                    if cL3 != 0: Lres += cL3*ASa2*AL1
+                    if cL4 != 0: Lres += cL4*ALa2*AL1
+                    if cL5 != 0: Lres += cL5*AAa2*AL1
+                    if cL6 != 0: Lres += cL6*np.conj(AL1)*AS1*AA1*np.conj(eikz)
+                    if cL7 != 0: Lres += cL7*ne*AL1
+                    if cL8 != 0: Lres += cL8*ne*ve*AL1
+                    if cL9 != 0: Lres += cL9*WMPI_NH2O_L[ti,ri]*AL1/ALa2
+                    if tlen>1:
+                        if cL10 != 0: Lres += cL10 * t2Deriv(AL,ti,ri,tlen,dt2)
+
+                if include_antistokes and updateA:
                     Ares += cA1*(r2Deriv(AA, ti, ri, rlen, dr2) + rinv*dAAdr) 
-                    if cA2 != 0: Ares += cA2*tDeriv(AA, ti, ri, tlen, dtd)
+                    if tlen>1:
+                        if cA2 != 0: Ares += cA2*tDeriv(AA, ti, ri, tlen, dtd)
+                        if cA10 != 0: Ares += cA10 * t2Deriv(AA,ti,ri,tlen,dt2)
                     if cA3 != 0: Ares += cA3*ASa2*AA1
                     if cA4 != 0: Ares += cA4*ALa2*AA1
                     if cA5 != 0: Ares += cA5*AAa2*AA1
@@ -268,7 +280,6 @@ def getRHS(constants, includes, euler):
                     if cA7 != 0: Ares += cA7*ne*AA1
                     if cA8 != 0: Ares += cA8*ne*ve*AA1
                     if cA9 != 0: Ares += cA9*WMPI_NH2O_A[ti,ri]*AA1/AAa2
-                    if cA10 != 0: Ares += cA10 * t2Deriv(AA,ti,ri,tlen,dt2)
 
                     
 
