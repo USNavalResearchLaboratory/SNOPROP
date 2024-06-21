@@ -38,16 +38,17 @@ params = { # Now we will enter the parameter dictionary
     'adaptive_zstep': True, # Toggle adaptive zstep
     'radial_filter': False, # Smooth the electron density at each step
     'warn_critical': False, # Don't warn me if the electron density becomes critical
-    'dz': 2e-07,
-    'dz_min': 2e-09,
 
     # Grid parameters
+    'dz': 2.0e-06,
+    'dz_min': 2e-09,
     'zrange': [0, 0.004], # Stop the simulation at 4 mm
     'trange': [-1.5e-11,1.5e-11], # box temporal size is 30 ps
     't_clip': 5e-12, # Cut off the temporal profile 5ps from the box edge
     'tlen': 120, # Number of cells in time
     'rrange': [0., 200e-6], # Radial boundary at 400 microns
-    'rlen': 800, # Number of cells in radius
+    'rlen': 800,  # Number of cells in radius (defaiult 800 for equidistant grid)
+    #'rbeta': 1.2, # grid expansion parameter 1 <= rbeta <=1.5. rbeta=1 is equidistant grid.
     'iter_max': 40, # Max iterations for C-N solver
 
     # Pulse profiles    
@@ -57,7 +58,7 @@ params = { # Now we will enter the parameter dictionary
         'efrac': [1], # Energy fraction in each sub-pulse
         'pulse_radius_half': [24e-06], # Half width half max of each sub-pulse
         'focal_length': 0.002, # Focus at 2 mm.
-        'energy': 4000000*5e-12, # Pulse energy in J
+        'energy': 20e-6, # Pulse energy in J
     },
 
     # Data output
@@ -72,9 +73,9 @@ params = { # Now we will enter the parameter dictionary
         # Individual and total beam spot sizes (RMS integrated)
         'RMSSize_S','RMSSize_L','RMSSize_A','RMSSize_T',
         # Max electron density, intensities, and E fields anywhere in box
-        'Ne_max','Te_max','IS_max','IL_max','IA_max','ES_max','EL_max','EA_max', # comment GMP: added Te_max
+        'Ne_max','Te_max','IS_max','IL_max','IA_max','ES_max','EL_max','EA_max','dz','iter' # comment GMP: added Te_max
     ],
-    'save_1D_z_interval': 100e-6, # z interval at which to save 1D data
+    'save_1D_z_interval': 400e-6, # z interval at which to save 1D data
     'save_1D_which': [ # Select which 1D data to save to file
         # Radial max of electron density, radial intensities at temporal middle of pulse, and radial average power and fluence
         'Ne_max','IS_mid','IL_mid','IA_mid','PL','PS','PA','FL','FS','FA',
