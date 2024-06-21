@@ -13,7 +13,6 @@ PI = np.pi
 def dNedtau(WMPI_NH2O,vi,ne,eta):
     return WMPI_NH2O + vi*ne - eta*ne
 
-
 @numba.njit(fastmath=True)
 def getI(A,factor):
     return np.real(A*np.conj(A))*(factor*4.)
@@ -65,6 +64,7 @@ def Get_ofi(E,omega,Ip,reduced_mass):                              # begin subro
     # calculate MPI ionization rate
     m=me*reduced_mass                                              # convert reduced to actual mass in [kg]
     Ip*=e0                                                         # ionization threshold Ip in [J]
+    E+=1.0                                                         # make sure E is finite
     gama=np.sqrt(m*Ip)*omega/(e0*E)                                # Keldysh parameter γ
     Up=(e0*E)**2/(4.0*m*omega**2)                                  # ponderomotive energy Up in [J]
     x=(Ip+Up)/(h_bar*omega)                                        # x=(I+Up)/(ħω)
@@ -80,11 +80,16 @@ def Get_ofi(E,omega,Ip,reduced_mass):                              # begin subro
     if gama < 0.1: return W_tun                                    # return W_tun if γ < 0.1
     # calculate total OFI rate
     return W_mpi+W_tun                                             # return W in [m^-3*s^-1]
+
+@numba.njit(fastmath=True)
+def Get_ofi_Winkler(E,omega,Ip,reduced_mass):                      # begin subroutine Winkler MPI
+  I=0.5*8.85e-12*3e8*E**2+1.0
+  return 1.4e-65*I**6
 #------------------------------------------------- end -------------------------------------------------
 #----------------------------------------------- Te(E,ω) -----------------------------------------------
 # This subroutine solves the power balance equation for electrons to compute the electron temperature.
 # input:
-#   - E  : laser field in [V/m]
+#   - E  : laser field amplitude in [V/m]
 #   - ω  : laser frequency in [rad/s]
 #   - Te : electron temperature in [eV]; optional
 # output:
@@ -109,7 +114,7 @@ def Get_ofi(E,omega,Ip,reduced_mass):                              # begin subro
 # [1/s], in which Te is in units of [eV]. The rates are calculated by integrating the coresponding cross
 # section over Maxwellian electron energy istribution. The cross sections are from Ref. [1]
 # [1] H. Date, K. L. Sutherland, H. Hasegawa, M. Shimozuma, "Ionization and excitation collision processes 
-# of electrons in liquid water", Nuclear Instr. Methods in Physics Research B 265, 515-520 (2007)
+#     of electrons in liquid water", Nuclear Instr. Methods in Physics Research B 265, 515-520 (2007)
 #
 @numba.njit(fastmath=True)
 def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0):
@@ -137,15 +142,14 @@ def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0):
         Te/=power_balance**0.25                                              # advance Te
         if abs(1.0-power_balance) < eps: break                               # exit if convergence reached
     Te=max(Te,0.026)                                                         # make Te larger than room temp
-    return [Te,nu_ion,nu_att]                                                # return Te
+    return [Te,nu_ion,nu_att,nu_mom]                                         # return Te and collisiona rates
 #------------------------------------------------- end -------------------------------------------------
-
+#------------------------------------------------ NeMPI ------------------------------------------------
 @numba.njit(parallel=True, fastmath=True)
 def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # comment GMP: added array te
     AS, AL, AA = fieldsIn
     WMPI_NH2O, WMPI_NH2O_S, WMPI_NH2O_L,WMPI_NH2O_A = wmpiOut
     dt, eta, wS, wL, wA, nS, nL, nA, e0, c, NH2O, lS,lL,lA, IMPI, veC, viC = constants
-
     tlen, rlen = AS.shape
 
     ISfactor = (nS/2*e0*c)
@@ -157,8 +161,7 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
 
     Te=1.0                                                                   # initialize Te
     for i in numba.prange(rlen-1): # Solve for electron density using RK4 and Eq. 10 from Hafizi 2016
-
-        ne[0,i] = 0. # Boundary condition is that we have no electon density before the pulse arrives
+        ne[0,i] = 1.0e-10 # Boundary condition is that we have no electon density before the pulse arrives
 
         # assign fields to local variables
         ASa = np.absolute(AS[0,i])/2.0
@@ -172,30 +175,30 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
         #WMPI_NH2O[0,i] = WMPI_NH2O_S[0,i] + WMPI_NH2O_L[0,i] + WMPI_NH2O_A[0,i]
 
         # <ve>=e0*|E|/(me*ω)
-        fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
-        ve[0,i] = veC*fieldsAvg
-
+        #fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
+        #ve[0,i] = veC*fieldsAvg
+        
         # collisional ionization rate (original version)
         #vinext = viC*ve[0,i]*fieldsAvg*fieldsAvg
 
         # calculate Keldysh OFI rates with Ip=9.5 eV and electron reduced mass 0.2 (comment GMP: use Keldysh rate by GMP)
-        WMPI_NH2O_S[0,i] = Get_ofi(ASa,wS,9.5,0.2)
-        WMPI_NH2O_L[0,i] = Get_ofi(ALa,wL,9.5,0.2)
-        WMPI_NH2O_A[0,i] = Get_ofi(AAa,wA,9.5,0.2)
+        WMPI_NH2O_S[0,i] = Get_ofi(2*ASa,wS,9.5,0.2)
+        WMPI_NH2O_L[0,i] = Get_ofi(2*ALa,wL,9.5,0.2)
+        WMPI_NH2O_A[0,i] = Get_ofi(2*AAa,wA,9.5,0.2)
         WMPI_NH2O[0,i] = WMPI_NH2O_S[0,i] + WMPI_NH2O_L[0,i] + WMPI_NH2O_A[0,i]
 
         # calculate Te and collisional rates (comment GMP: use model developed by GMP)
         Te=te[0,i]
-        Te,nu_ion,nu_att=Get_Te_steadystate(ASa,wS,ALa,wL,AAa,wA,Te)
-        te[0,i]=Te      # comment GMP: use model developed by GMP
-        vinext = nu_ion # comment GMP: use model developed by GMP
-        eta=nu_att      # comment GMP: use model developed by GMP
+        Te,nu_ion,nu_att,nu=Get_Te_steadystate(2*ASa,wS,2*ALa,wL,2*AAa,wA)
+        te[0,i]=Te       # comment GMP: use model developed by GMP
+        vinext  = nu_ion # comment GMP: use model developed by GMP
+        eta     = nu_att # comment GMP: use model developed by GMP
+        ve[0,i] = nu     # comment GMP: use model developed by GMP
 
         if tlen==1:
             ne[0,i] = WMPI_NH2O[0,i]/(eta - vinext)
 
         for j in range(tlen-1):
-
             # assign fields to local variables
             ASa = np.absolute(AS[j+1,i])
             ALa = np.absolute(AL[j+1,i])
@@ -208,26 +211,27 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
             #WMPI_NH2O[j+1,i] = WMPI_NH2O_S[j+1,i] + WMPI_NH2O_L[j+1,i] + WMPI_NH2O_A[j+1,i]
 
             # <ve>=e0*|E|/(me*ω)
-            fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
-            ve[j+1,i] = veC*fieldsAvg # We save ve in an array for later
+            #fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
+            #ve[j+1,i] = veC*fieldsAvg # We save ve in an array for later
 
             # collisional ionization rate (original version)
             #vihere = vinext # This is from the previous loop
             #vinext = viC*ve[j+1,i]*fieldsAvg*fieldsAvg
 
             # calculate OFI rates with Ip=9.5 eV and electron reduced mass 0.2 (comment GMP: use Keldysh rate by GMP)
-            WMPI_NH2O_S[j+1,i] = Get_ofi(ASa,wS,9.5,0.2)
-            WMPI_NH2O_L[j+1,i] = Get_ofi(ALa,wL,9.5,0.2)
-            WMPI_NH2O_A[j+1,i] = Get_ofi(AAa,wA,9.5,0.2)
+            WMPI_NH2O_S[j+1,i] = Get_ofi(2*ASa,wS,9.5,0.2)
+            WMPI_NH2O_L[j+1,i] = Get_ofi(2*ALa,wL,9.5,0.2)
+            WMPI_NH2O_A[j+1,i] = Get_ofi(2*AAa,wA,9.5,0.2)
             WMPI_NH2O[j+1,i] = WMPI_NH2O_S[j+1,i] + WMPI_NH2O_L[j+1,i] + WMPI_NH2O_A[j+1,i]
 
             # calculate Te and collisional rates (comment GMP: use model developed by GMP)
-            Te=te[j+1,i]
-            Te,nu_ion,nu_att=Get_Te_steadystate(ASa,wS,ALa,wL,AAa,wA,Te)
+            Te=te[j,i]
+            Te,nu_ion,nu_att,nu=Get_Te_steadystate(2*ASa,wS,2*ALa,wL,2*AAa,wA,Te)
             te[j+1,i]=Te
-            vihere = vinext # This is from the previous loop
-            vinext = nu_ion # comment GMP: use model developed by GMP
-            eta = nu_att    # comment GMP: use model developed by GMP
+            vihere    = vinext # This is from the previous loop
+            vinext    = nu_ion # comment GMP: use model developed by GMP
+            eta       = nu_att # comment GMP: use model developed by GMP
+            ve[j+1,i] = nu     # comment GMP: use model developed by GMP
 
             vihalf = (vihere+vinext)/2.
             
@@ -245,8 +249,8 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
             ne1 = Nehere + k3
             k4 = dt*(WMPI_NH2Onext + vinext*ne1 - eta*ne1)
             ne[j+1,i] = Nehere + 1/6.*(k1 + 2.*k2 + 2.*k3 + k4)
-            
-
+#------------------------------------------------- end -------------------------------------------------
+#---------------------------------------------- derivatives --------------------------------------------
 @numba.njit(fastmath=True)
 def rDeriv(arr, ti, ri, rlen, drd): # Get the first r derivative of arr at indices (ti,ri). drd should equal dr*2
     # # Fourth-order solver
@@ -297,9 +301,10 @@ def r2Deriv(arr, ti, ri, rlen, dr2): # Get the second r derivative of arr at ind
     if ri == rlen-1:
         diff = 2.*arr[ti,ri]-5.*arr[ti,ri-1]+4.*arr[ti,ri-2]-arr[ti,ri-3]
     elif ri == 0:
-        diff = 2*arr[ti,0]-5*arr[ti,1]+4*arr[ti,2]-arr[ti,3]
+        #diff = 2*arr[ti,0]-5*arr[ti,1]+4*arr[ti,2]-arr[ti,3]
+        diff = 2.0*(arr[ti,1]-arr[ti,0])
     else:
-        diff = arr[ti,ri+1] + arr[ti,ri-1] - 2.*arr[ti,ri]
+        diff = arr[ti,ri+1]+arr[ti,ri-1]-2.0*arr[ti,ri]
     return diff/(dr2) # dr2 is dr**2
 
 @numba.njit(fastmath=True)
@@ -323,7 +328,8 @@ def t2Deriv(arr, ti, ri, tlen, dt2): # Get the second r derivative of arr at ind
     else:
         diff = arr[ti+1,ri] + arr[ti-1,ri] - 2.*arr[ti,ri]
     return diff/(dt2) # dt2 is dt**2
-
+#------------------------------------------------- end -------------------------------------------------
+#------------------------------------------------- RHS -------------------------------------------------
 def getRHS(constants, includes, euler):
     cS, cL, cA, dd = constants
     cS1, cS2, cS3, cS4, cS5, cS6, cS7, cS8, cS9, cS10 = cS
@@ -338,7 +344,6 @@ def getRHS(constants, includes, euler):
 
     include_stokes, include_antistokes, include_ionization, include_plasma_refraction, include_energy_loss, updateS, updateL, updateA = includes
     #print('getrhs',constants,includes)
-    #print(cL6,cL7,cL8)
     
     @numba.njit(parallel=True, fastmath=True)
     def RHS(ASorig,ALorig,AAorig, # fields from previous zstep
@@ -353,13 +358,7 @@ def getRHS(constants, includes, euler):
 
         for ri in numba.prange(rlen): # numba.prange is parallel across threads
             rowErr = 0. # Keep track of the error for each row since we're doing this in parallel
-            rinv = 0.0 # r inverse (set to 0 at r=0 so it isn't infinity)
-            if ri > 0:
-                rinv = 1/(ri*dr)#+dr/2)
             for ti in numba.prange(tlen):
-
-
-
                 # Get local values of the fields, values squared, and derivatives
                 if include_stokes:
                     AS1 = AS[ti,ri]
@@ -385,7 +384,6 @@ def getRHS(constants, includes, euler):
                     ne = Ne[ti,ri]
                     ve = Ve[ti,ri]
 
-
                 # Initialize solutions
                 Sres = 0
                 Lres = 0
@@ -393,7 +391,10 @@ def getRHS(constants, includes, euler):
 
                 # Now we will use
                 if include_stokes and updateS:
-                    Sres += cS1*(r2Deriv(AS, ti, ri, rlen, dr2) + rinv*dASdr) # Diffraction and linear focusing
+                    if ri == 0:
+                        Sres += 2.0*cS1*r2Deriv(AS, ti, ri, rlen, dr2)              # Diffraction and linear focusing
+                    else:
+                        Sres += cS1*(r2Deriv(AS, ti, ri, rlen, dr2) + dASdr/(ri*dr)) # Diffraction and linear focusing
                     if tlen>1:
                         if cS2 != 0: Sres += cS2*tDeriv(AS, ti, ri, tlen, dtd) # Group delay
                         if cS10 != 0: Sres += cS10 * t2Deriv(AS,ti,ri,tlen,dt2) # Group velocity dispersion
@@ -406,7 +407,10 @@ def getRHS(constants, includes, euler):
                     if cS9 != 0: Sres += cS9*WMPI_NH2O_S[ti,ri]*AS1/ASa2 # Plasma energy loss
 
                 if updateL:
-                    Lres += cL1*(r2Deriv(AL, ti, ri, rlen, dr2) + rinv*dALdr)
+                    if ri == 0:
+                        Lres += 2.0*cL1*r2Deriv(AL, ti, ri, rlen, dr2)
+                    else:
+                        Lres += cL1*(r2Deriv(AL, ti, ri, rlen, dr2) + dALdr/(ri*dr))
                     if cL3 != 0: Lres += cL3*ASa2*AL1
                     if cL4 != 0: Lres += cL4*ALa2*AL1
                     if cL5 != 0: Lres += cL5*AAa2*AL1
@@ -418,7 +422,10 @@ def getRHS(constants, includes, euler):
                         if cL10 != 0: Lres += cL10 * t2Deriv(AL,ti,ri,tlen,dt2)
 
                 if include_antistokes and updateA:
-                    Ares += cA1*(r2Deriv(AA, ti, ri, rlen, dr2) + rinv*dAAdr) 
+                    if ri == 0:
+                        Ares += 2.0*cA1*r2Deriv(AA, ti, ri, rlen, dr2) 
+                    else:
+                        Ares += cA1*(r2Deriv(AA, ti, ri, rlen, dr2) + dAAdr/(ri*dr)) 
                     if tlen>1:
                         if cA2 != 0: Ares += cA2*tDeriv(AA, ti, ri, tlen, dtd)
                         if cA10 != 0: Ares += cA10 * t2Deriv(AA,ti,ri,tlen,dt2)
@@ -429,8 +436,6 @@ def getRHS(constants, includes, euler):
                     if cA7 != 0: Ares += cA7*ne*AA1
                     if cA8 != 0: Ares += cA8*ne*ve*AA1
                     if cA9 != 0: Ares += cA9*WMPI_NH2O_A[ti,ri]*AA1/AAa2
-
-                    
 
                 # Now use these dAdz values to update the fields!
                 if euler: # Use Euler method
@@ -452,7 +457,6 @@ def getRHS(constants, includes, euler):
                         AAout[ti,ri] = AAorig[ti,ri] + dz * (Ares + dAAdz[ti,ri])/2.0
                         rowErr += abs(aain - AAout[ti,ri])
                         
-
             errorArr[ri] = rowErr
 
         if euler: # We don't return error for Euler method
@@ -461,4 +465,5 @@ def getRHS(constants, includes, euler):
             return np.sum(errorArr) / float(rlen*tlen) # Return the error per cell
 
     return RHS
+#------------------------------------------------- end -------------------------------------------------
 

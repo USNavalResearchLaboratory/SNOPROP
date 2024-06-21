@@ -5,7 +5,6 @@
 # THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 import numpy as np
-from collections import Iterable
 import time
 import sys, os
 from .FileIO import FileIO
@@ -222,7 +221,6 @@ class Simulation:
             self.nLg = getNg(self.lLv)
             self.nAg = getNg(self.lAv)
 
-
             # get GVD parameters
             def getGVDBeta(l1,domega=self.wL*0.01):
                 omega1 = self.c/l1*2*np.pi
@@ -250,12 +248,8 @@ class Simulation:
         self.kA = 2*np.pi*self.nA/self.lAv
         self.antistokesAngle = np.arccos((self.kA**2+4*self.kL**2-self.kS**2)/(4*self.kA*self.kL)) # magic angle for Anti-Stokes propagation (amplified four-wave mixing)
         self.stokesAngle = np.arccos((self.kS**2+4*self.kL**2-self.kA**2)/(4*self.kS*self.kL)) # magic angle for Stokes propagation (which leads to amplified four-wave mixing)
-        self.dk = 2*self.kL-self.kA-self.kS
-
-
-        
-
-        
+        self.dk = 2*self.kL-self.kA-self.kS        
+       
         if 'lS' in params: self.lS = params['lS']
         else: self.lS = int(self.Uion / (self.hb*self.wS)) + 1 # How many photons to ionize water
         if 'lL' in params: self.lL = params['lL']
@@ -297,7 +291,6 @@ class Simulation:
         
         self.logText = []
 
-
         if self.file_output:
             self.filer = FileIO() # Makes folder to store the data
             if self.saveScalars: # Do this now, after self.file_output has been checked, to initialize the scalar save file
@@ -312,27 +305,26 @@ class Simulation:
         #    self.Rpulse *= scaleFrac
         #    self.mesh_init()
         
-
     def mesh_init(self): # Create the simulation data structures and initialize the pulses
         self.dt = (self.tend-self.tstart)/(self.tlen) if self.tlen > 1 else (self.tend-self.tstart)
         self.dr = (self.rend-self.rstart)/(self.rlen-1)
         # Courant condition. Get the z step size.
-        #utau = (self.nLg-self.nSg)/self.c * self.include_group_delay # no need to check this if we aren't calculating the Raman beam or shift
-        #ur = 1.j*self.c/(2*self.wL*self.nL)
-        #if self.dzMax == 0: # Need to calculate dzMax from the Courant condition
-        #    self.dzMax = float(np.abs(self.CFL/(utau/self.dt+ur/self.dr**2)))
-        utau = (1/self.nLg-1/self.nAg) * self.include_group_delay # no need to check this if we aren't calculating the Raman beam or shift
-        ur = self.c * .12 # Beam propagating with sin(angle)=0.1 off axis
-        if self.dzMax == 0: # Need to calculate dzMax from the Courant condition
-            self.dzMax = self.CFL * self.c/(ur/self.dr + utau/self.dt)
-        #print('CFL')
-        #print('cfl t',1/(utau/self.dt),self.c/((1/self.nLg-1/self.nAg)/self.dt))
-        #print('cfl r',1/(ur/self.dr**2),self.c/(self.c/self.dr * .1))
-        #print('dz total',self.dzMax,self.c/(self.c/self.dr * .1 + (1/self.nLg-1/self.nAg)/self.dt))
-        #quit()
+        utau = (self.nLg-self.nSg)/self.c*self.include_group_delay            # no need to check this if we aren't calculating the Raman beam or shift
+        ur = self.c/(2*self.wL*self.nL)                                       # c/(2*omega*n)->lambda/(4*pi*n)
+        if self.dzMax == 0:                                                   # Need to calculate dzMax from the Courant condition
+            self.dzMax = self.CFL/(utau/self.dt+ur/self.dr**2)
         self.dz = self.dzMax
         if self.dzMin==0: self.dzMin = self.dzMax / 10**4
         self.zlen = int(np.ceil((self.zend-self.zstart)/self.dz)) + 1
+
+        print('Time and grid parameters:')                                     # comment GMP 2024/02/13: print out stime step and spatial grid steps
+        print('dt=%7.3e (s)' % (self.dt))
+        print('dz=%7.3e (m)' % (self.dz))
+        print('dr=%7.3e (m)' % (self.dr))
+        #print('ur=%7.3e' % (ur))
+        print('dz=%7.3e max{dz}=%7.3e' % (self.dz,self.dr**2/ur))
+        print('n2(Kerr)=%7.3e ' % (self.n2Kerr))
+        #print('n2(Raman)=%7.3e ' % (self.n2Raman))
 
         # Initialize the grid
         self.r0 = np.linspace(self.rstart, self.rend-self.dr, self.rlen)#+self.dr/2.
@@ -355,7 +347,6 @@ class Simulation:
         self.AL = np.zeros((self.tlen,self.rlen), dtype=complexType)
         self.AS = np.zeros((self.tlen,self.rlen), dtype=complexType)
         self.AA = np.zeros((self.tlen,self.rlen), dtype=complexType)
-
 
         # Set up radial filter if need be
         if self.radial_filter and self.radial_filter_type == 'hankel':
@@ -423,7 +414,6 @@ class Simulation:
 
                 if len(temporalData)==0 and temporalFunc == False:
                     sigmaT = tau/2*np.sqrt(2/np.log(2)) # 1/e^2 half-length
-
 
                 # Start with the laser profile
                 pumpPulsesI = []
@@ -496,7 +486,6 @@ class Simulation:
                 #field[np.abs(field)<Amin] = Amin
                 field[:,:] += Amin
                
-            
         # Add backgrounds to these fields if they didn't have specified profiles
         # Also set update flags
         if self.profile_S == False:
@@ -531,8 +520,6 @@ class Simulation:
         self.CNcount = 0.
         self.step = 0
 
-
-
     def setupHankel(self):
         self.hankelReady=True
         rcenter = self.r0+self.dr/2.
@@ -562,9 +549,6 @@ class Simulation:
         #r1, r2 = self.r0[i1],self.r0[i2]
         #self.radialFilterShape[i1:i2] = np.cos(np.pi*(self.r0[i1:i2]-r1)/(r2-r1))*.5 + .5
         self.radialFilterShape = np.cos(np.pi*(np.cos(np.pi*(self.r0/self.r0[-1]))*.5+.5))*-.5+.5
-
-            
-        
 
     # Constants to be simplify the integration
     def constants_gen(self): 
@@ -606,51 +590,6 @@ class Simulation:
         self.cA9 = -self.wA/self.kA/(self.c*self.c)*self.Uion/4./self.e0 * self.include_energy_loss
         self.cA10 = self.gvd_bA/2j * self.include_gvd
 
-
-
-        # # Check the constants again
-        # print('cS')
-        # print(self.cS1, -1/(2j*self.kS))
-
-
-        #print(self.cS2, (2j*(self.nS**2*self.wS/self.c**2 - self.kS*self.nL/self.c)/(2j*self.kS)))
-        #print(self.cS2, (2j*(self.nS**2*self.wS/self.c**2 - self.kS/self.vg)/(2j*self.kS)))
-        #print(self.cA2, (2j*(self.nA**2*self.wA/self.c**2 - self.kA*self.nL/self.c)/(2j*self.kA)))
-        #print(self.cA2, (2j*(self.nA**2*self.wA/self.c**2 - self.kA/self.vg)/(2j*self.kA)))
-        #print(self.c/self.nS, self.c/self.nL, self.c/self.nA, self.vg)
-
-
-        # print(self.cS3, -6*self.wS**2/self.c**2*(1/2*self.xNR)/(2j*self.kS))
-        # print(self.cS4, -6*self.wS**2/self.c**2*(self.xRS+self.xNR)/(2j*self.kS))
-        # print(self.cS5, -6*self.wS**2/self.c**2*(self.xNR)/(2j*self.kS))
-        # print(self.cS6, -6*self.wS**2/self.c**2*(self.xRS+self.xNR)/(2j*self.kS))
-        # print(self.cS7, self.e**2/(self.me*self.e0*self.c**2)/(2j*self.kS))
-        # print(self.cS8, self.e**2/(self.me*self.e0*self.c**2)*(-1j/self.wS)/(2j*self.kS))
-        #print(self.cS9, -1j*self.wS/(2*self.c**2)*self.Uion/(2j*self.kS)/self.e0)
-
-        # print('cL')
-        # print(self.cL1, -1/(2j*self.kL))
-        # print(self.cL2, 0/(2j*self.kL))
-        # print(self.cL3, -6*self.wL**2/self.c**2*(self.xRA+self.xNR)/(2j*self.kL))
-        # print(self.cL4, -6*self.wL**2/self.c**2*(1/2*self.xNR)/(2j*self.kL))
-        # print(self.cL5, -6*self.wL**2/self.c**2*(self.xRS+self.xNR)/(2j*self.kL))
-        # print(self.cL6, -6*self.wL**2/self.c**2*(self.xNR*2)/(2j*self.kL))
-        # print(self.cL7, self.e**2/(self.me*self.e0*self.c**2)/(2j*self.kL))
-        # print(self.cL8, self.e**2/(self.me*self.e0*self.c**2)*(-1j/self.wL)/(2j*self.kL))
-        #print(self.cL9, -1j*self.wL/(2*self.c**2)*self.Uion/(2j*self.kL)/self.e0)
-
-        # print('cA')
-        # print(self.cA1, -1/(2j*self.kA))
-        # print(self.cA2, 0/(2j*self.kA))
-        # print(self.cA3, -6*self.wA**2/self.c**2*(self.xNR)/(2j*self.kA))
-        # print(self.cA4, -6*self.wA**2/self.c**2*(self.xRA+self.xNR)/(2j*self.kA))
-        # print(self.cA5, -6*self.wA**2/self.c**2*(1/2*self.xNR)/(2j*self.kA))
-        # print(self.cA6, -6*self.wA**2/self.c**2*(self.xRA+self.xNR)/(2j*self.kA))
-        # print(self.cA7, self.e**2/(self.me*self.e0*self.c**2)/(2j*self.kA))
-        # print(self.cA8, self.e**2/(self.me*self.e0*self.c**2)*(-1j/self.wA)/(2j*self.kA))
-        #print(self.cA9, -1j*self.wA/(2*self.c**2)*self.Uion/(2j*self.kA)/self.e0)
-        #quit()
-
         # Put the constants into a single variable to pass to our Numba functions
         self.constants = (
             (self.cS1, self.cS2, self.cS3, self.cS4, self.cS5, self.cS6, self.cS7, self.cS8, self.cS9, self.cS10),
@@ -659,7 +598,6 @@ class Simulation:
             (self.dt, self.dr, self.tlen, self.rlen)
             )
         self.includes = (self.include_stokes, self.include_antistokes, self.include_ionization, self.include_plasma_refraction, self.include_energy_loss,self.updateS,self.updateL,self.updateA)
-
 
     def radialFilter(self, field):
         if not self.radial_filter:
@@ -695,8 +633,6 @@ class Simulation:
         return np.sum(inten,axis=0)*self.dt
     def getEField(self, I, n): return np.sqrt(I/(n/2*self.e0*self.c))
     def getAFromI(self, I, n): return np.sqrt(I/(n*2*self.e0*self.c))
-
-
 
     # Public methods
     def getZ(self): return self.z
@@ -753,10 +689,10 @@ class Simulation:
         fractionAlong = fAboveDiff/(fAboveDiff+fBelowDiff)
         return self.r0[idxHalf-1] + self.dr*fractionAlong
 
-        
+    # modified by GMP: 2024-01-29
     def display(self, number):
-        if (type(number) is str or isinstance(number, Iterable)):
-            return str(number)
+        if type(number) is str:
+            return number
         else:
             return "{:.6g}".format(number)
     def printIfConsoleOutput(self, *string):
@@ -815,7 +751,6 @@ class Simulation:
         return
 
     def calculateIonization(self):
- #       if self.ionMethod == 'MPI':
         calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
                   (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
                   self.ve, self.ne, self.te, # comment GMP: added array te
@@ -911,8 +846,9 @@ class Simulation:
             j = j+1
         if self.adaptive_zstep:
             # increase zstep if it is converging too fast
-            if ((j <= 2) and (self.dz<self.dzMax) and (self.step-self.adaptive_zstep_last >= 10)): 
-                self.dz = self.dz*2.
+            #if ((j <= 2) and (self.dz<self.dzMax) and (self.step-self.adaptive_zstep_last >= 10)): 
+            if ((j <= 2) and (self.dz<self.dzMax)): 
+                self.dz = self.dz*1.2
                 self.adaptive_zstep_last = self.step
                 self.printIfConsoleOutput('Increasing zstep on step ',self.step,'iteration',j,' New zstep is',self.dz)
                 self.printIfConsoleOutput('error',error)
@@ -933,7 +869,6 @@ class Simulation:
                 )
             self.stepTime = tnew
             
-
         # Saving data
         saveRestartNow = (self.saveRestarts and self.step%self.saveRestartInterval==0 and self.step != 0)
         saveScalarsNow = (self.saveScalars and (
@@ -1008,6 +943,10 @@ class Simulation:
                         saveArr.append(np.max(self.ne))
                     elif s == "Te_max":
                         saveArr.append(np.max(self.te))  # comment GMP: added on 01/25/2023
+                    elif s == "dz":
+                        saveArr.append(self.dz)  # comment GMP: added on 02/25/2023
+                    elif s == "iter":
+                        saveArr.append(j)  # comment GMP: added on 02/25/2023
                     else:
                         print('Save scalar option "'+s+'" is not supported.')
                         quit()
@@ -1101,7 +1040,6 @@ class Simulation:
         self.log('Numerical energy in anti-Stokes beam at end: '+self.display(enA)+" J")
         self.log('\t that is '+self.display(enA/self.energy)+" times the input energy")
         self.logSave('log_end')
-
 
     def run(self):
         while self.z < self.zend:
