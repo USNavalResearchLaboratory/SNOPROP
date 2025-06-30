@@ -76,7 +76,8 @@ class FileIO:
 
     def appendRow(self, fname, numbers):
         with open(fname,'a') as f:
-            f.write('\n'+','.join([str(e) for e in numbers]))
+            #f.write('\n'+','.join([str(e) for e in numbers]))
+            f.write('\n'+','.join(["{:.6g}".format(e) for e in numbers]))
 
     def saveDataFile(self, frameData, fname, labels=None, info=None):
         fname = self.dataDir+fname+".csv"

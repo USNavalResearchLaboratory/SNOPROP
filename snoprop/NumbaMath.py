@@ -1,35 +1,30 @@
-# The source code has been authored by federal and non-federal employees. To the extent that a federal employee is an author of a portion of this software or a derivative work thereof, no copyright is claimed by the United States Government, as represented by the Secretary of the Navy ("GOVERNMENT") under Title 17, U.S. Code. All Other Rights Reserved. To the extent that a non-federal employee is an author of a portion of this software or a derivative work thereof, the work was funded in whole or in part by the U.S. Government, and is, therefore, subject to the following license: The Government has unlimited rights to use, modify, reproduce, release, perform, display, or disclose the computer software and computer software documentation in whole or in part, in any manner and for any purpose whatsoever, and to have or authorize others to do so. Any other rights are reserved by the copyright owner.
+#
+#                                         01/29/2025
+#
+# The source code has been authored by federal and non-federal employees. To the extent that a federal 
+# employee is an author of a portion of this software or a derivative work thereof, no copyright is 
+# claimed by the United States Government, as represented by the Secretary of the Navy ("GOVERNMENT")
+# under Title 17, U.S. Code. All Other Rights Reserved. To the extent that a non-federal employee is an 
+# author of a portion of this software or a derivative work thereof, the work was funded in whole or in 
+# part by the U.S. Government, and is, therefore, subject to the following license: The Government has 
+# unlimited rights to use, modify, reproduce, release, perform, display, or disclose the computer software 
+# and computer software documentation in whole or in part, in any manner and for any purpose whatsoever, 
+# and to have or authorize others to do so. Any other rights are reserved by the copyright owner.
 
-# Neither the name of NRL or its contributors, nor any entity of the United States Government may be used to endorse or promote products derived from this software, nor does the inclusion of the NRL written and developed software directly or indirectly suggest NRL's or the United States Government's endorsement of this product. 
+# Neither the name of NRL or its contributors, nor any entity of the United States Government may be 
+# used to endorse or promote products derived from this software, nor does the inclusion of the NRL 
+# written and developed software directly or indirectly suggest NRL's or the United States Government's 
+# endorsement of this product. 
 
-# THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+# THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT 
+# LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 import numpy as np
 import numba
 
-PI = np.pi
-
 @numba.njit(fastmath=True)
 def dNedtau(WMPI_NH2O,vi,ne,eta):
     return WMPI_NH2O + vi*ne - eta*ne
-
-@numba.njit(fastmath=True)
-def getI(A,factor):
-    return np.real(A*np.conj(A))*(factor*4.)
-
-@numba.njit(fastmath=True)
-def easyPow(x,n): # Raises x to the integer power x. Only for small n.
-    res = x
-    for i in range(n-1):
-        res *= x
-    return res
-
-@numba.njit(fastmath=True)
-def factorial(n):
-    res = 1
-    for i in range(2,n+1):
-        res *= i
-    return res
 
 #---------------------------------------------- W_ofi(E,ω) --------------------------------------------
 # This subroutine calculates the Keldysh rate by summing up the MPI and tunnel rates. This is not the
@@ -82,12 +77,14 @@ def Get_ofi(E,omega,Ip,reduced_mass):                              # begin subro
     return W_mpi+W_tun                                             # return W in [m^-3*s^-1]
 
 @numba.njit(fastmath=True)
-def Get_ofi_Winkler(E,omega,Ip,reduced_mass):                      # begin subroutine Winkler MPI
+def Get_mpi_Winkler(E,omega,Ip,reduced_mass):                      # begin subroutine Winkler MPI
   I=0.5*8.85e-12*3e8*E**2+1.0
   return 1.4e-65*I**6
 #------------------------------------------------- end -------------------------------------------------
-#----------------------------------------------- Te(E,ω) -----------------------------------------------
-# This subroutine solves the power balance equation for electrons to compute the electron temperature.
+#-------------------------------------------- H2O chemistry --------------------------------------------
+# This subroutine solves the power balance equation for electrons to compute the electron temperature for
+# H2O chemistry at liquid density
+#
 # input:
 #   - E  : laser field amplitude in [V/m]
 #   - ω  : laser frequency in [rad/s]
@@ -116,6 +113,11 @@ def Get_ofi_Winkler(E,omega,Ip,reduced_mass):                      # begin subro
 # [1] H. Date, K. L. Sutherland, H. Hasegawa, M. Shimozuma, "Ionization and excitation collision processes 
 #     of electrons in liquid water", Nuclear Instr. Methods in Physics Research B 265, 515-520 (2007)
 #
+# Momentum transfer rates: 
+# 2.5e15*Col("Te")^0.80/(1+0.65*Col("Te")^0.9) -> Incerti-2005
+# 7.5e14*Col("Te")^0.60/(1+0.02*Col("Te")^1.2) -> Plante
+# 4.8e14*Col("Te")^0.70/(1+0.03*Col("Te")^1.3) -> Michaud-2003
+# 2.0e14*Col("Te")^0.45/(1+0.025*Col("Te")^1.1) -> Signurell-2020
 @numba.njit(fastmath=True)
 def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0):
     # ES,EL and EA -> laser fields in [V/m], wS, wL and wA -> laser frequency in [rad/s]
@@ -123,18 +125,22 @@ def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0):
     e0=1.6022e-19                                                            # electron charge in [C]
     me=9.1094e-31                                                            # electron mass in [kg]
     # computational parameters
-    Nmb_iter=30                                                              # max number of iterations
+    Nmb_iter=40                                                              # max number of iterations
     eps=1.0e-3                                                               # convergence criteria
     Te=max(Te,0.1)                                                           # make Te larger than room temp
     for iter in range(Nmb_iter):                                             # begin loop to compute Te
         # calculate collision rates in units [1/s] and power gain or loss in units [eV/s]
-        nu_mom =3.4e+15*Te**0.52/(1+0.01*Te**1.5);P_mom =nu_mom*9.08e-5*Te   # momentum transfer
+        #nu_mom=2.5e+15*Te**0.80/(1+0.650*Te**0.9);P_mom =nu_mom*9.08e-5*Te  # momentum transfer Incerti-2010
+        #nu_mom=7.5e+14*Te**0.60/(1+0.020*Te**1.2);P_mom =nu_mom*9.08e-5*Te  # momentum transfer Plante
+        #nu_mom=4.8e+14*Te**0.70/(1+0.030*Te**1.3);P_mom =nu_mom*9.08e-5*Te  # momentum transfer Michaud-2003
+        nu_mom=2.0e+14*Te**0.45/(1+0.025*Te**1.1);P_mom =nu_mom*9.08e-5*Te   # momentum transfer Signorell
         nu_vib1=1.017e+14*Te**-0.1436*np.exp(-0.1344/Te);P_vib1=nu_vib1*0.20 # vib. excitation #1
         nu_vib2=2.713e+14*Te**-0.3962*np.exp(-0.4361/Te);P_vib2=nu_vib2*0.48 # vib. excitation #2
-        nu_vib3=7.107e+13*Te** 0.0784*np.exp(-0.9280/Te);P_vib3=nu_vib3*1.00 # vib. excitation #3
+        nu_vib3=7.107e+13*Te**0.07840*np.exp(-0.9280/Te);P_vib3=nu_vib3*1.00 # vib. excitation #3
         nu_att =2.778e+13*Te**-0.7231*np.exp(-5.2515/Te);P_att =nu_att*4.50  # attachment
         nu_exc =1.249e+13*Te**1.20480*np.exp(-8.9390/Te);P_exc =nu_exc*8.70  # excitation
-        nu_ion =4.720e+12*Te**1.84040*np.exp(-13.029/Te);P_ion =nu_ion*13.1  # ionization
+        #nu_ion =4.720e+12*Te**1.84040*np.exp(-13.029/Te);P_ion =nu_ion*13.1  # ionization Date
+        nu_ion =2.706e+14*Te**0.55750*np.exp(-13.1042/Te);P_ion =nu_ion*13.1 # ionization Incerti
         # Joule heating
         P_joule=e0*nu_mom/(2*me)*(ES**2/(nu_mom**2+wS**2)+EL**2/(nu_mom**2+wL**2)+EA**2/(nu_mom**2+wA**2))
         # update Te
@@ -149,16 +155,9 @@ def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0):
 def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # comment GMP: added array te
     AS, AL, AA = fieldsIn
     WMPI_NH2O, WMPI_NH2O_S, WMPI_NH2O_L,WMPI_NH2O_A = wmpiOut
-    dt, eta, wS, wL, wA, nS, nL, nA, e0, c, NH2O, lS,lL,lA, IMPI, veC, viC = constants
+    dt, eta, wS, wL, wA, nS, nL, nA, lS, lL, lA, NH2O, effective_mass, Uion = constants
     tlen, rlen = AS.shape
-
-    ISfactor = (nS/2*e0*c)
-    ILfactor = (nL/2*e0*c)
-    IAfactor = (nA/2*e0*c)
-    wfacS= NH2O*2*np.pi/factorial(lS-1)
-    wfacL= NH2O*2*np.pi/factorial(lL-1)
-    wfacA= NH2O*2*np.pi/factorial(lA-1)
-
+    #print("Uion=",Uion)
     Te=1.0                                                                   # initialize Te
     for i in numba.prange(rlen-1): # Solve for electron density using RK4 and Eq. 10 from Hafizi 2016
         ne[0,i] = 1.0e-10 # Boundary condition is that we have no electon density before the pulse arrives
@@ -168,32 +167,19 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
         ALa = np.absolute(AL[0,i])/2.0
         AAa = np.absolute(AA[0,i])/2.0
 
-        # WMPI (original version)
-        #WMPI_NH2O_S[0,i] = wfacS*wS*easyPow(getI(AS[0,i],ISfactor)/IMPI, lS)
-        #WMPI_NH2O_L[0,i] = wfacL*wL*easyPow(getI(AL[0,i],ILfactor)/IMPI, lL)
-        #WMPI_NH2O_A[0,i] = wfacA*wA*easyPow(getI(AA[0,i],IAfactor)/IMPI, lA)
-        #WMPI_NH2O[0,i] = WMPI_NH2O_S[0,i] + WMPI_NH2O_L[0,i] + WMPI_NH2O_A[0,i]
-
-        # <ve>=e0*|E|/(me*ω)
-        #fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
-        #ve[0,i] = veC*fieldsAvg
-        
-        # collisional ionization rate (original version)
-        #vinext = viC*ve[0,i]*fieldsAvg*fieldsAvg
-
-        # calculate Keldysh OFI rates with Ip=9.5 eV and electron reduced mass 0.2 (comment GMP: use Keldysh rate by GMP)
-        WMPI_NH2O_S[0,i] = Get_ofi(2*ASa,wS,9.5,0.2)
-        WMPI_NH2O_L[0,i] = Get_ofi(2*ALa,wL,9.5,0.2)
-        WMPI_NH2O_A[0,i] = Get_ofi(2*AAa,wA,9.5,0.2)
+        # calculate Keldysh OFI rates (comment GMP: use Keldysh rate by GMP)
+        WMPI_NH2O_S[0,i] = Get_ofi(2*ASa,wS,Uion,effective_mass)
+        WMPI_NH2O_L[0,i] = Get_ofi(2*ALa,wL,Uion,effective_mass)
+        WMPI_NH2O_A[0,i] = Get_ofi(2*AAa,wA,Uion,effective_mass)
         WMPI_NH2O[0,i] = WMPI_NH2O_S[0,i] + WMPI_NH2O_L[0,i] + WMPI_NH2O_A[0,i]
 
         # calculate Te and collisional rates (comment GMP: use model developed by GMP)
         Te=te[0,i]
         Te,nu_ion,nu_att,nu=Get_Te_steadystate(2*ASa,wS,2*ALa,wL,2*AAa,wA)
-        te[0,i]=Te       # comment GMP: use model developed by GMP
-        vinext  = nu_ion # comment GMP: use model developed by GMP
-        eta     = nu_att # comment GMP: use model developed by GMP
-        ve[0,i] = nu     # comment GMP: use model developed by GMP
+        te[0,i]=Te                                                           # comment GMP: uses model developed by GMP
+        vinext  = nu_ion                                                     # comment GMP: uses model developed by GMP
+        eta     = nu_att                                                     # comment GMP: uses model developed by GMP
+        ve[0,i] = nu                                                         # comment GMP: uses model developed by GMP
 
         if tlen==1:
             ne[0,i] = WMPI_NH2O[0,i]/(eta - vinext)
@@ -204,34 +190,20 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
             ALa = np.absolute(AL[j+1,i])
             AAa = np.absolute(AA[j+1,i])
 
-            # WMPI calculation (original version)
-            #WMPI_NH2O_S[j+1,i] = wfacS*wS*easyPow(getI(AS[j+1,i],ISfactor)/IMPI, lS)
-            #WMPI_NH2O_L[j+1,i] = wfacL*wL*easyPow(getI(AL[j+1,i],ILfactor)/IMPI, lL)
-            #WMPI_NH2O_A[j+1,i] = wfacA*wA*easyPow(getI(AA[j+1,i],IAfactor)/IMPI, lA)
-            #WMPI_NH2O[j+1,i] = WMPI_NH2O_S[j+1,i] + WMPI_NH2O_L[j+1,i] + WMPI_NH2O_A[j+1,i]
-
-            # <ve>=e0*|E|/(me*ω)
-            #fieldsAvg = np.sqrt(ASa*ASa/(wS*wS) + ALa*ALa/(wL*wL) + AAa*AAa/(wA*wA))
-            #ve[j+1,i] = veC*fieldsAvg # We save ve in an array for later
-
-            # collisional ionization rate (original version)
-            #vihere = vinext # This is from the previous loop
-            #vinext = viC*ve[j+1,i]*fieldsAvg*fieldsAvg
-
-            # calculate OFI rates with Ip=9.5 eV and electron reduced mass 0.2 (comment GMP: use Keldysh rate by GMP)
-            WMPI_NH2O_S[j+1,i] = Get_ofi(2*ASa,wS,9.5,0.2)
-            WMPI_NH2O_L[j+1,i] = Get_ofi(2*ALa,wL,9.5,0.2)
-            WMPI_NH2O_A[j+1,i] = Get_ofi(2*AAa,wA,9.5,0.2)
+            # calculate OFI rates (comment GMP: use Keldysh rate by GMP)
+            WMPI_NH2O_S[j+1,i] = Get_ofi(2*ASa,wS,Uion,effective_mass)
+            WMPI_NH2O_L[j+1,i] = Get_ofi(2*ALa,wL,Uion,effective_mass)
+            WMPI_NH2O_A[j+1,i] = Get_ofi(2*AAa,wA,Uion,effective_mass)
             WMPI_NH2O[j+1,i] = WMPI_NH2O_S[j+1,i] + WMPI_NH2O_L[j+1,i] + WMPI_NH2O_A[j+1,i]
 
             # calculate Te and collisional rates (comment GMP: use model developed by GMP)
-            Te=te[j,i]
+            Te=te[j+1,i]
             Te,nu_ion,nu_att,nu=Get_Te_steadystate(2*ASa,wS,2*ALa,wL,2*AAa,wA,Te)
             te[j+1,i]=Te
-            vihere    = vinext # This is from the previous loop
-            vinext    = nu_ion # comment GMP: use model developed by GMP
-            eta       = nu_att # comment GMP: use model developed by GMP
-            ve[j+1,i] = nu     # comment GMP: use model developed by GMP
+            vihere    = vinext                                               # This is from the previous loop
+            vinext    = nu_ion                                               # comment GMP: uses model developed by GMP
+            eta       = nu_att                                               # comment GMP: uses model developed by GMP
+            ve[j+1,i] = nu                                                   # comment GMP: uses model developed by GMP
 
             vihalf = (vihere+vinext)/2.
             
@@ -277,7 +249,7 @@ def rDeriv(arr, ti, ri, rlen, drd): # Get the first r derivative of arr at indic
         diff = -3.*arr[ti,0]+4.*arr[ti,1]-arr[ti,2]
     else:
         diff = arr[ti,ri+1] - arr[ti,ri-1]
-    return diff/(drd) # drd is 2*dr
+    return diff/drd # drd is 2*dr
 
 @numba.njit(fastmath=True)
 def r2Deriv(arr, ti, ri, rlen, dr2): # Get the second r derivative of arr at indices (ti,ri). dr2 should equal dr**2
@@ -305,7 +277,7 @@ def r2Deriv(arr, ti, ri, rlen, dr2): # Get the second r derivative of arr at ind
         diff = 2.0*(arr[ti,1]-arr[ti,0])
     else:
         diff = arr[ti,ri+1]+arr[ti,ri-1]-2.0*arr[ti,ri]
-    return diff/(dr2) # dr2 is dr**2
+    return diff/dr2 # dr2 is dr**2
 
 @numba.njit(fastmath=True)
 def tDeriv(arr, ti, ri, tlen, dtd): # Get the first t derivative of arr at indices (ti,ri). dtd should equal dt*2
@@ -316,7 +288,7 @@ def tDeriv(arr, ti, ri, tlen, dtd): # Get the first t derivative of arr at indic
         diff = -3.*arr[0,ri]+4.*arr[1,ri]-arr[2,ri]
     else:
         diff = arr[ti+1,ri] - arr[ti-1,ri]
-    return diff/(dtd) # dtd is 2*dt
+    return diff/dtd # dtd is 2*dt
 
 @numba.njit(fastmath=True)
 def t2Deriv(arr, ti, ri, tlen, dt2): # Get the second r derivative of arr at indices (ti,ri). dr2 should equal dr**2
@@ -327,7 +299,7 @@ def t2Deriv(arr, ti, ri, tlen, dt2): # Get the second r derivative of arr at ind
         diff = 2*arr[0,ri]-5*arr[1,ri]+4*arr[2,ri]-arr[3,ri]
     else:
         diff = arr[ti+1,ri] + arr[ti-1,ri] - 2.*arr[ti,ri]
-    return diff/(dt2) # dt2 is dt**2
+    return diff/dt2 # dt2 is dt**2
 #------------------------------------------------- end -------------------------------------------------
 #------------------------------------------------- RHS -------------------------------------------------
 def getRHS(constants, includes, euler):
@@ -402,7 +374,7 @@ def getRHS(constants, includes, euler):
                     if cS4 != 0: Sres += cS4*ALa2*AS1 # SRS and cross-phase modulation
                     if cS5 != 0: Sres += cS5*AAa2*AS1 # cross-phase modulation
                     if cS6 != 0: Sres += cS6*AL1*AL1*np.conj(AA1)*eikz # FWM and cross-phase modulation
-                    if cS7 != 0: Sres += cS7*ne*AS1 # Plasma refraction
+                    if cS7 != 0: Sres += cS7*ne*AS1   # Plasma refraction
                     if cS8 != 0: Sres += cS8*ne*ve*AS1 # Plasma energy loss
                     if cS9 != 0: Sres += cS9*WMPI_NH2O_S[ti,ri]*AS1/ASa2 # Plasma energy loss
 

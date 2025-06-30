@@ -41,30 +41,32 @@ class Timer():
 
 class Simulation:
     # Constants here. Units are SI.
-    c = 299792458. # speed of light in m/s
-    e0 = 8.854e-12 # SI vacuum permittivity
-    e = 1.602e-19 # Elementary charge in C
-    eVtoJ = e # convert eV to J
-    me = 9.109e-31 # Electron mass in kg
+    c = 299792458.     # speed of light in m/s
+    e0 = 8.854e-12     # SI vacuum permittivity
+    e = 1.602e-19      # Elementary charge in C
+    me = 9.109e-31     # Electron mass in kg
     hb = 1.0545718e-34 # Reduced Planck's constant
-    NH2O = 0 # Users will input neutral density if using ionization
+    fs = 1e-15         # 1 fs
+    ps = 1e-12         # 1 ps
+    nm = 1e-9          # 1 nm
+    mkm = 1e-6         # 1 micron
+    NH2O = 0           # Users will input neutral density if using ionization
 
-    CFL = 0.8 # Courant-Friedrichs-Lewy scaling factor. Z step size will be this factor times the max dz calculated from the cfl number.
+    CFL = 0.8          # Courant-Friedrichs-Lewy scaling factor. Z step size will be this factor times the max dz calculated from the cfl number.
     failed = False
     hankelReady=False
-    
+    #----------------------------------------------- init -----------------------------------------------
     def __init__(self, params):
 
         # Check that the input deck parameters are valid
         # List the required and optional parameters
         required_params = ['zrange', 'trange', 'tlen', 'rrange', 'rlen',
-                           'wV', 'Uion',
-                           'sigmaC', 'IMPI', 'eta', 'IBackground', 'include_plasma_refraction',
+                           'wV', 'IBackground', 'include_plasma_refraction',
                            'include_ionization', 'include_energy_loss', 'include_raman',
-                           'include_fwm', 'include_kerr', 'include_group_delay', 'include_gvd', 'n2Kerr',
-                           'n2Raman', 'wavelength']
+                           'include_fwm', 'include_kerr', 'include_group_delay', 'include_gvd',
+                           'n2Kerr', 'n2Raman', 'wavelength', 'Uion', 'effective_mass']
         optional_params = [
-            'effective_mass', 'material', 'nS', 'nL', 'nA', 'nSg', 'nLg', 'nAg', 'gvd_bS', 'gvd_bL', 'gvd_bA',
+            'material', 'nS', 'nL', 'nA', 'nSg', 'nLg', 'nAg', 'gvd_bS', 'gvd_bL', 'gvd_bA',
             'include_stokes', 'include_antistokes', 'include_collisional_ionization', 'include_radial_derivatives',
             'adaptive_zstep','radial_filter','radial_filter_interval','radial_filter_type','radial_filter_field',
             'profile_L','profile_S','profile_A','dz','dz_min','t_clip',
@@ -96,7 +98,8 @@ class Simulation:
             quit()
 
         # Retrieve physical constants from input dictionary (all units SI)
-        if 'effective_mass' in params: self.me *= params['effective_mass']
+        self.me*=params['effective_mass']
+        self.effective_mass= params['effective_mass']
         self.include_plasma_refraction, self.include_ionization = params['include_plasma_refraction'], params['include_ionization']
         if self.include_ionization:
             if 'N0' not in params:
@@ -104,12 +107,12 @@ class Simulation:
                 quit()
             else:
                 self.NH2O = params['N0']
-        self.wV, self.Uion, self.sigmaC, self.IMPI = params['wV'], params['Uion']*self.eVtoJ, params['sigmaC'], params['IMPI']
-        self.eta, self.IBackground, self.n2Kerr, self.n2Raman = params['eta'], params['IBackground'], params['n2Kerr'], params['n2Raman']
-        if 'me' in params: self.me = params['me']
-        self.veC = self.NH2O*self.sigmaC * self.e / (np.sqrt(2) * self.me) * 2.0# Electron collision frequency constants (Hafizi 2016 Eq. 9). Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
+        self.eta=1e10 # initialize eta
+        #print("simulations->Uion=",params['Uion'])
+        self.wV, self.Uion = params['wV'], params['Uion']*self.e
+        self.IBackground, self.n2Kerr, self.n2Raman = params['IBackground'], params['n2Kerr'], params['n2Raman']
+        #if 'me' in params: self.me = params['me']
         self.include_collisional_ionization = params['include_collisional_ionization'] if 'include_collisional_ionization' in params else True
-        self.viC = self.e**2/(2*self.me*self.Uion) * 4.0 * self.include_collisional_ionization # Avalanche ionization rate constants. Adjusted since our A fields are defined as half as large as Bahman's. (E = A*exp() + c.c. here, as opposed to E = 1/2*A*exp() + c.c. in Bahman's paper)
         
         self.include_energy_loss, self.include_raman = params['include_energy_loss'], params['include_raman']
         #self.include_plasma_refraction *= self.include_ionization
@@ -213,7 +216,8 @@ class Simulation:
             self.nA = ior(self.lAv)
 
             # get group refractive index
-            # get derivative of n0 at laser wavelength by taking difference between n0 at lLv+dlLv and lLv-dlLv; dlLv is just the sampling distance on either side of the wavelength of interest
+            # get derivative of n0 at laser wavelength by taking difference between n0 at lLv+dlLv and lLv-dlLv; 
+            # dlLv is just the sampling distance on either side of the wavelength of interest
             def getNg(l0,dlLv=1e-9):
                 dn0dl = (ior(l0+dlLv) - ior(l0-dlLv)) / (2*dlLv)
                 return ior(l0) - l0*dn0dl
@@ -256,11 +260,11 @@ class Simulation:
         else: self.lL = int(self.Uion / (self.hb*self.wL)) + 1 # How many photons to ionize water
         if 'lA' in params: self.lA = params['lA']
         else: self.lA = int(self.Uion / (self.hb*self.wA)) + 1 # How many photons to ionize water
-        self.EBgS = self.getEField(self.IBackground,self.nS) # Get background E-field from background intensity
-        self.EBgL = self.getEField(self.IBackground,self.nL) # Get background E-field from background intensity
-        self.EBgA = self.getEField(self.IBackground,self.nA) # Get background E-field from background intensity
-        self.xNR = self.n2Kerr * 4*self.nL**2*self.e0*self.c/3 # convert n2 at laser wavelength to xNR using Boyd Eq. 4.1.19 (not 1.2.14b)
-        self.xRS = self.n2Raman * 4*self.nL**2*self.e0*self.c/3 # convert n2 at laser wavelength to xNR using Boyd Eq. 4.1.19 (not 1.2.14b)
+        self.EBgS = self.getEField(self.IBackground,self.nS)   # Get background E-field from background intensity
+        self.EBgL = self.getEField(self.IBackground,self.nL)   # Get background E-field from background intensity
+        self.EBgA = self.getEField(self.IBackground,self.nA)   # Get background E-field from background intensity
+        self.xNR = self.n2Kerr*4*self.nL**2*self.e0*self.c/3   # convert n2 at laser wavelength to xNR using Boyd Eq. 4.1.19 (not 1.2.14b)
+        self.xRS = self.n2Raman*4*self.nL**2*self.e0*self.c/3  # convert n2 at laser wavelength to xNR using Boyd Eq. 4.1.19 (not 1.2.14b)
         self.xRA = -1.*self.xRS
 
         self.errorThreshold = 0.01 # Threshold for crank-nicolson iteration
@@ -287,7 +291,7 @@ class Simulation:
         self.file_output = params['file_output'] if 'file_output' in params else True # Set this to false to avoid writing any output files
         if self.file_output == False:
             self.save2D, self.saveScalars, self.saveRestarts, self.save1D = False, False, False, False # Cut all output if params['file_output'] is false
-        self.console_logging_interval = params['console_logging_interval'] if 'console_logging_interval' in params else 20 # Set this to 0 to eliminate console logging
+        self.console_logging_interval = params['console_logging_interval'] if 'console_logging_interval' in params else 50 # Set this to 0 to eliminate console logging
         
         self.logText = []
 
@@ -297,33 +301,39 @@ class Simulation:
                 self.scalarsFile = self.filer.makeCSVFile('scalars', self.saveScalarsWhich)
         else:
             self.filer = False
-            
-        self.mesh_init()
-        #if 'force_FWHM' in params:
-        #    scaleFrac = params['force_FWHM']/self.getFWHM(self.getFluence(self.getIL()+self.getIA()+self.getIS()))
-        #    print(scaleFrac)
-        #    self.Rpulse *= scaleFrac
-        #    self.mesh_init()
-        
+
+        self.output_file=open('data/phase_shift.dat','w')                     # open file for writing
+        self.output_file.write('    z         ne         Te\n')               # header
+
+        self.mesh_init()                                                      # make a mesh 
+    #----------------------------------------------- end -----------------------------------------------
+    #---------------------------------------------- mesh -----------------------------------------------
     def mesh_init(self): # Create the simulation data structures and initialize the pulses
         self.dt = (self.tend-self.tstart)/(self.tlen) if self.tlen > 1 else (self.tend-self.tstart)
         self.dr = (self.rend-self.rstart)/(self.rlen-1)
         # Courant condition. Get the z step size.
-        utau = (self.nLg-self.nSg)/self.c*self.include_group_delay # no need to check this if we aren't calculating the Raman beam or shift
+        utau = (self.nLg-self.nSg)/self.c*self.include_group_delay            # no need to check this if we aren't calculating the Raman beam or shift
         ur = self.c/(2*self.wL*self.nL)                                       # c/(2*omega*n)->lambda/(4*pi*n)
         if self.dzMax == 0:                                                   # Need to calculate dzMax from the Courant condition
             self.dzMax = self.CFL/(utau/self.dt+ur/self.dr**2)
         self.dz = self.dzMax
-        if self.dzMin==0: self.dzMin = self.dzMax / 10**4
-        self.zlen = int(np.ceil((self.zend-self.zstart)/self.dz)) + 1
+        if self.dzMin==0: self.dzMin = self.dzMax/10**4
+        self.zlen = int(np.ceil((self.zend-self.zstart)/self.dz))+1
 
-        print('Time and grid parameters:')                                     # comment GMP 2024/02/13: print out stime step and spatial grid steps
-        print('dt=%7.3e (s)' % (self.dt))
-        print('dz=%7.3e (m)' % (self.dz))
-        print('dr=%7.3e (m)' % (self.dr))
-        #print('ur=%7.3e' % (ur))
-        print('dz=%7.3e max{dz}=%7.3e' % (self.dz,self.dr**2/ur))
-        print('n2(Kerr)=%7.3e ' % (self.n2Kerr))
+        print('\nLaser parameters:')                                          # comment GMP 2025/01/23: print laser parameters
+        laser_energy  =self.profile_L['energy']                               # comment GMP 2025/01/23:
+        laser_duration=self.profile_L['pulse_length_fwhm']                    # comment GMP 2025/01/23:
+        laser_spotsize=self.profile_L['pulse_radius_half']                    # comment GMP 2025/01/23:
+        print('  E=%7.3e (J)'    % (laser_energy))                            # comment GMP 2025/01/23: print lase energy
+        print('  tau=%7.3f (fs)' % (laser_duration[0]/self.fs))               # comment GMP 2025/01/23: pulse duration (fwhm)
+        print('  R=%7.3f (mkm)\n' % (laser_spotsize[0]/self.mkm))             # comment GMP 2025/01/23: pulse radius (hwhm)
+
+        print('Time and grid parameters:')                                    # comment GMP 2024/02/13: print out stime step and spatial grid steps
+        print('  dt(fs)=%7.3f (fs)' % (self.dt/self.fs))
+        print('  dz=%7.3f (nm)' % (self.dz/self.nm))
+        print('  dr=%7.3f (mkm)' % (self.dr/self.mkm))
+        #print('  dz=%7.3e max{dz}=%7.3e' % (self.dz,self.dr**2/ur))
+        #print('n2(Kerr)=%7.3e ' % (self.n2Kerr))
         #print('n2(Raman)=%7.3e ' % (self.n2Raman))
 
         # Initialize the grid
@@ -519,7 +529,8 @@ class Simulation:
         self.meanStepTime = 0
         self.CNcount = 0.
         self.step = 0
-
+    #----------------------------------------------- end -----------------------------------------------
+    #------------------------------------------ Hankel filter ------------------------------------------
     def setupHankel(self):
         self.hankelReady=True
         rcenter = self.r0+self.dr/2.
@@ -549,8 +560,8 @@ class Simulation:
         #r1, r2 = self.r0[i1],self.r0[i2]
         #self.radialFilterShape[i1:i2] = np.cos(np.pi*(self.r0[i1:i2]-r1)/(r2-r1))*.5 + .5
         self.radialFilterShape = np.cos(np.pi*(np.cos(np.pi*(self.r0/self.r0[-1]))*.5+.5))*-.5+.5
-
-    # Constants to be simplify the integration
+    #----------------------------------------------- end -----------------------------------------------
+    #------------------------------ Constants to be simplify the integration ---------------------------
     def constants_gen(self): 
         if self.include_raman is False:
             self.xRA, self.xRS = 0.,0.
@@ -598,7 +609,8 @@ class Simulation:
             (self.dt, self.dr, self.tlen, self.rlen)
             )
         self.includes = (self.include_stokes, self.include_antistokes, self.include_ionization, self.include_plasma_refraction, self.include_energy_loss,self.updateS,self.updateL,self.updateA)
-
+    #----------------------------------------------- end -----------------------------------------------
+    #------------------------------------------ radial filter ------------------------------------------
     def radialFilter(self, field):
         if not self.radial_filter:
             print('Must turn on radial filter before initialization to use radial filter.')
@@ -625,12 +637,12 @@ class Simulation:
         v = np.einsum('ij,fi->fj',mat,v) # Do the filter
         v = np.einsum('j,ij...->ij...',1/scale,v)
         return v
-
+    #----------------------------------------------- end -----------------------------------------------
+    #----------------------------------------- laser parameters ----------------------------------------
     # Helpers for useful metrics and common conversions
-    def getInten(self, A, n): # Get intensity from field where A is the envelope field (E= A exp(i w t) + c.c.)
-        return 4.*np.absolute(A*np.conj(A))*(n/2.*self.e0*self.c) # See e.g. Boyd 2.5.1
-    def getFluence(self,inten):
-        return np.sum(inten,axis=0)*self.dt
+    # Get intensity from field where A is the envelope field (E= A exp(i w t) + c.c.)
+    def getInten(self, A, n): return 4.*np.absolute(A*np.conj(A))*(n/2.*self.e0*self.c) # See e.g. Boyd 2.5.1
+    def getFluence(self,inten): return np.sum(inten,axis=0)*self.dt
     def getEField(self, I, n): return np.sqrt(I/(n/2*self.e0*self.c))
     def getAFromI(self, I, n): return np.sqrt(I/(n*2*self.e0*self.c))
 
@@ -650,8 +662,8 @@ class Simulation:
     }
 
     def getEn(self, inten): return np.sum(inten*(self.rr)*self.dr*self.dt*2*np.pi)
-    def getEnField(self, A, n): # Get energy of an field where A is the envelope field (E= A exp(i w t) + c.c.)
-        return np.sum(self.getInten(A,n)*self.rr*self.dr*self.dt*2*np.pi)
+    # Get energy of an field where A is the envelope field (E= A exp(i w t) + c.c.)
+    def getEnField(self, A, n): return np.sum(self.getInten(A,n)*self.rr*self.dr*self.dt*2*np.pi)
     def getEnS(self): return self.getEn(self.getIS())
     def getEnL(self): return self.getEn(self.getIL())
     def getEnA(self): return self.getEn(self.getIA())
@@ -667,15 +679,12 @@ class Simulation:
     def setAS(self,A): self.AS = A.copy()
     def setAL(self,A): self.AL = A.copy()
     def setAA(self,A): self.AA = A.copy()
-
-
     def getP(self,I): return 2*np.pi*np.sum(I*self.rr,axis=1)*self.dr
-    def getA(self, E): return E/2. # Using definition E= A exp(i w t) + c.c.
-    def getEFromA(self, A): return 2.*A
-    def getFWHM(self, fluence):
-        return 2.*self.getRadiusFraction(0.5,fluence)
-    def getRMSSize(self, fluence):
-        return 2*np.sqrt(np.sum(fluence*self.r0**2)/np.sum(fluence))
+    def getA(self,E): return E/2. # Using definition E= A exp(i w t) + c.c.
+    def getEFromA(self,A): return 2.*A
+    def getFWHM(self,fluence): return 2.*self.getRadiusFraction(0.5,fluence)
+    #def getRMSSize(self,fluence): return 2*np.sqrt(np.sum(fluence*self.r0**2)/np.sum(fluence))
+    def getRMSSize(self,fluence): return 2*np.sum(fluence*self.r0**2)/np.sum(fluence*self.r0) # RMMSize=2<r*I>/<I>
     def getRadiusFraction(self,fraction,fluence): # Get the radius to a fraction of max fluence
         fluenceFrac = fraction*np.max(fluence)
         overFrac = fluence>fluenceFrac
@@ -688,7 +697,8 @@ class Simulation:
         fBelowDiff = fluenceFrac-fBelow
         fractionAlong = fAboveDiff/(fAboveDiff+fBelowDiff)
         return self.r0[idxHalf-1] + self.dr*fractionAlong
-
+    #----------------------------------------------- end -----------------------------------------------
+    #------------------------------------------- screen info -------------------------------------------
     # modified by GMP: 2024-01-29
     def display(self, number):
         if type(number) is str:
@@ -710,8 +720,7 @@ class Simulation:
         self.logText = []
         self.log('----Constants----All units are SI unless otherwise stated----')
         textPairs = [('Uion',self.Uion),('Uion (eV)',self.Uion/self.e),('NH2O',self.NH2O),
-                    ('IMPI',self.IMPI),('collision cross section',self.sigmaC),
-                    ('Electron attachment rate',self.eta),('xNR',self.xNR),('xRS',self.xRS),('xRA',self.xRA),
+                    ('xNR',self.xNR),('xRS',self.xRS),('xRA',self.xRA),
                     ('Background intensity',self.IBackground),('Background field (laser)',self.EBgL),
                     ('Background field (Stokes)',self.EBgS),('Background field (Anti-Stokes)',self.EBgA)]
         for pair in textPairs: self.log(pair[0]+': '+self.display(pair[1]))
@@ -742,19 +751,22 @@ class Simulation:
         self.log('Numerical energy in Laser grid at start: '+self.display(self.getEnL())+" J")
         self.log('Numerical energy in anti-Stokes grid at start: '+self.display(self.getEnA())+" J")
         self.logSave('log_start')
-
+    #----------------------------------------------- end -----------------------------------------------
+    #---------------------------------------- boundary conditions --------------------------------------
     def boundaryConds(self):
         dr0 = 0. # Reflecting boundary at r=0
         self.AS[:,0] = 1./3*(-2*self.dr*dr0+4.*self.AS[:,1]-self.AS[:,2]) 
         self.AL[:,0] = 1./3*(-2*self.dr*dr0+4.*self.AL[:,1]-self.AL[:,2])
         self.AA[:,0] = 1./3*(-2*self.dr*dr0+4.*self.AA[:,1]-self.AA[:,2])
         return
-
+    #----------------------------------------------- end -----------------------------------------------
+    #------------------------------------------- ionization --------------------------------------------
     def calculateIonization(self):
         calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
                   (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
                   self.ve, self.ne, self.te, # comment GMP: added array te
-                  (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA, self.e0, self.c, self.NH2O, self.lS,self.lL,self.lA, self.IMPI, self.veC, self.viC)
+                  (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA,  
+                  self.lS, self.lL, self.lA, self.NH2O, self.effective_mass, self.Uion/self.e) # comment GMP: effective_mass, Uion
         )
         if self.tlen==1:
             self.ne = (self.WMPI_NH2O/self.eta)
@@ -768,7 +780,8 @@ class Simulation:
                 print('Ne max = {:.4g}/cm^3, critical density = {:.4g}/cm^3 (calculated for the anti-Stokes beam)'.format(np.max(self.ne)/1e6,self.neCrit/1e6))
                 print('Exiting now')
                 quit()
-            
+    #----------------------------------------------- end -----------------------------------------------
+    #---------------------------------------------- move -----------------------------------------------        
     def move(self): # Advance the simulation by one z step.
         self.boundaryConds() # Apply boundary conditions
         if self.step == 0: # Do this only on the first step
@@ -865,11 +878,19 @@ class Simulation:
             tnew = time.time()
             dt = tnew - self.stepTime
             self.meanStepTime = 0 if self.step==0 else self.meanStepTime * (stepChunk-1)/stepChunk + dt / stepChunk
-            self.printIfConsoleOutput('step: {:d}, iteration: {:d}, error: {:.4E}, z: {:.6f}, dz:{:.3g}, work time:{:.3g}, mean work time:{:.4g}'.format(self.step, j, error, self.z, self.dz,dt, self.meanStepTime)#,'energy',"{:.4E}".format(self.getEn(self.getIL())+self.getEn(self.getIS())+self.getEn(self.getIA())),'dz',"{:.4E}".format(self.dz)
+            self.printIfConsoleOutput('step: {:4}, iteration: {:d}, error: {:.2e}, z: {:.3e}, dz:{:.1e}, work time:{:.4g}, mean work time:{:.4g}'.format(self.step,j,error,self.z,self.dz,dt,self.meanStepTime)
+            #,'energy',"{:.4E}".format(self.getEn(self.getIL())+self.getEn(self.getIS())+self.getEn(self.getIA())),'dz',"{:.4E}".format(self.dz)
                 )
             self.stepTime = tnew
             
         # Saving data
+        
+        # save z, ne and Te for phase shift. ne and Te are saved at r=0 and the end of the time simulation box.
+        self.output_file.write("%7.4e %7.3e %7.3e\n"% (self.z,self.ne[self.tlen-1,0],self.te[self.tlen-1,0]))
+        #self.output_file.write("%7.4e %7.3e %7.3e\n"% (self.z,self.ne[self.tlen-1,0],self.te[0,0]))
+        #self.output_file.write("%7.4e %7.3e %7.3e\n"% (self.z,self.ne[self.tlen-1,0],self.te[int(self.tlen/2)-1,0]))
+        #self.output_file.write("%7.3e %7.3e %7.3e\n"% (self.z,self.ne[self.tlen-1,0],np.max(self.te)))
+        
         saveRestartNow = (self.saveRestarts and self.step%self.saveRestartInterval==0 and self.step != 0)
         saveScalarsNow = (self.saveScalars and (
             (self.saveScalarsInterval>0 and self.step%self.saveScalarsInterval==0) or
@@ -887,7 +908,8 @@ class Simulation:
         if (saveRestartNow or saveScalarsNow or save2DNow or save1DNow):
             IS, IL, IA = self.getIS(), self.getIL(), self.getIA() # We only calculate these if we might need them later.
             IT = (IS+IL+IA)
-            ISmax,ILmax,IAmax = np.max(IS),np.max(IL),np.max(IA)
+            ISmax,ILmax,IAmax = np.max(IS),np.max(IL),np.max(IA)                                       # peak values: modified by GMP on 03-04-2025
+            ISmax,ILmax,IAmax = IS[int(self.tlen/2),0],IL[int(self.tlen/2),0],IA[int(self.tlen/2),0]   # on axis values: modified by GMP on 03-04-2025
 
             if saveRestartNow:
                 self.filer.savePickle(self, 'Restart_{:0>6d}'.format(self.step))
@@ -1018,7 +1040,8 @@ class Simulation:
             self.AA = AAnext
         self.z += self.dz
         self.step += 1
-        
+    #----------------------------------------------- end -----------------------------------------------
+    #--------------------------------------------- finish -----------------------------------------------
     def finish(self):
         self.timerEnd = time.time()*1000.0
 
@@ -1040,8 +1063,10 @@ class Simulation:
         self.log('Numerical energy in anti-Stokes beam at end: '+self.display(enA)+" J")
         self.log('\t that is '+self.display(enA/self.energy)+" times the input energy")
         self.logSave('log_end')
-
+    #----------------------------------------------- end -----------------------------------------------
+    #----------------------------------------------- run -----------------------------------------------
     def run(self):
         while self.z < self.zend:
             self.move()
         self.finish()
+    #----------------------------------------------- end -----------------------------------------------
