@@ -342,6 +342,8 @@ class Simulation:
         self.rr, self.tt = np.meshgrid(self.r0,self.t0) # Indexing will be A(t,r)
         self.ve = np.zeros((self.tlen,self.rlen), dtype=realType)
         self.ne = np.zeros((self.tlen,self.rlen), dtype=realType)
+        self.ne_ion = np.zeros((self.tlen,self.rlen), dtype=realType)          # comment DY: added array ne_ionization
+        self.ne_col = np.zeros((self.tlen,self.rlen), dtype=realType)          # comment DY: added array ne_collisions
         self.te = np.zeros((self.tlen,self.rlen), dtype=realType)              # comment GMP: added array te (set all elements to 0)
         self.te += 0.03                                                        # comment GMP: initialized array te (room temperature)
         if self.Ne_func != False:
@@ -764,7 +766,7 @@ class Simulation:
     def calculateIonization(self):
         calcNeMPI((self.AS,self.AL,self.AA), # calculate electron density
                   (self.WMPI_NH2O,self.WMPI_NH2O_S,self.WMPI_NH2O_L,self.WMPI_NH2O_A),
-                  self.ve, self.ne, self.te, # comment GMP: added array te
+                  self.ve, self.ne, self.ne_ion, self.ne_col, self.te, # comment GMP: added array te
                   (self.dt, self.eta, self.wS, self.wL, self.wA, self.nS, self.nL, self.nA,  
                   self.lS, self.lL, self.lA, self.NH2O, self.effective_mass, self.Uion/self.e) # comment GMP: effective_mass, Uion
         )
@@ -963,6 +965,10 @@ class Simulation:
                         saveArr.append(self.getEField(IAmax,self.nA))
                     elif s == "Ne_max":
                         saveArr.append(np.max(self.ne))
+                    elif s == "Ne_ion_max":
+                        saveArr.append(np.max(self.ne_ion))
+                    elif s == "Ne_col_max":
+                        saveArr.append(np.max(self.ne_col))
                     elif s == "Te_max":
                         saveArr.append(np.max(self.te))  # comment GMP: added on 01/25/2023
                     elif s == "dz":
@@ -980,6 +986,8 @@ class Simulation:
                 FL = np.sum(IL, axis=0)*self.dt
                 FA = np.sum(IA, axis=0)*self.dt
                 Ne_max = np.max(self.ne,axis=0)
+                Ne_ion_max = np.max(self.ne_ion,axis=0)
+                Ne_col_max = np.max(self.ne_col,axis=0)
                 saveDict = {'rrange':[self.rstart,self.rend],'rlen':self.rlen,'trange':[self.tstart,self.tend],'tlen':self.tlen,'z':self.z,'dz':self.dz}
                 for s in self.save1DWhich:
                     if s =='FS': saveDict[s] = np.sum(IS, axis=0)*self.dt
@@ -987,7 +995,9 @@ class Simulation:
                     elif s =='FA': saveDict[s] = np.sum(IA, axis=0)*self.dt
                     elif s =='FT': saveDict[s] = np.sum(IT, axis=0)*self.dt
                     elif s =='Ne_end': saveDict[s] = self.ne[-1,:]
-                    elif s =='Ne_max': saveDict[s] = np.max(self.ne,axis=0)
+                    elif s =='Ne_max': saveDict[s] = Ne_max
+                    elif s == 'Ne_ion_max': saveDict[s] = Ne_ion_max
+                    elif s == 'Ne_col_max': saveDict[s] = Ne_col_max
                     elif s =='PS': saveDict[s] = self.getP(IS)
                     elif s =='PL': saveDict[s] = self.getP(IL)
                     elif s =='PA': saveDict[s] = self.getP(IA)
@@ -1027,6 +1037,8 @@ class Simulation:
                     elif s =='EL': saveDict[s] = self.getEFromA(self.AL).astype(np.complex64)
                     elif s =='EA': saveDict[s] = self.getEFromA(self.AA).astype(np.complex64)
                     elif s =='Ne': saveDict[s] = self.ne.astype(float)
+                    elif s =='Ne_ion': saveDict[s] = self.ne_ion.astype(float)
+                    elif s =='Ne_col': saveDict[s] = self.ne_col.astype(float)
                     else:
                         print('Save 2D option "'+s+'" is not supported.')
                         quit()

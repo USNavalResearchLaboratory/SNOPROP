@@ -1,5 +1,5 @@
 #
-#                                         07/28/2026
+#                                         08/27/2026
 #
 # The source code has been authored by federal and non-federal employees. To the extent that a federal
 # employee is an author of a portion of this software or a derivative work thereof, no copyright is
@@ -82,16 +82,6 @@ def Get_mpi_Winkler(E,omega,Ip,reduced_mass):                      # begin subro
   return 1.4e-65*I**6
 #------------------------------------------------- end -------------------------------------------------
 #-------------------------------------------- H2O chemistry --------------------------------------------
-# This subroutine solves the power balance equation for electrons to compute the electron temperature for
-# H2O chemistry at liquid density
-#
-# input:
-#   - E  : laser field amplitude in [V/m]
-#   - ω  : laser frequency in [rad/s]
-#   - Te : electron temperature in [eV]; optional
-# output:
-#   - Te : electron temperature in [eV]
-#
 # The electron temperature is advanced according to the power balance equation:
 #   d/dt(1.5*ne*Te)=P_joule-(P_mom+P_vib1+P_vib2+P_vib3+P_att+P_exc+P_ion)
 # The power deposition rates are:
@@ -105,19 +95,19 @@ def Get_mpi_Winkler(E,omega,Ip,reduced_mass):                      # begin subro
 #   P_ion  =ne*ν_ion*∆E_ion,   where ∆E_ion=13.1 eV
 #
 # The Joule heating terms is, by definition, P_joule=(e*E)^2*ne*ν_mom/[2*me*(ν_mom^2+ω^2)] in [W/m^3].
-# The electron density on both sides has been canceled out (otherwise it has to be an input parameter).
+# The electron density on both sides is canceled out in the steady-state electron temperature approximation.
 # In addition, all power balance terms are calculated in units [eV/s] rather than in [W] in order to
 # avoid the conversion from [eV] to [K]. All collisional rates, i.e. nu_mom, nu_vib1, etc. are in units
 # [1/s], in which Te is in units of [eV]. The rates are calculated by integrating the coresponding cross
-# section over Maxwellian electron energy istribution. The cross sections are from Ref. [1]
+# section over Maxwellian electron energy distribution. The cross sections are from Ref. [1]
 # [1] H. Date, K. L. Sutherland, H. Hasegawa, M. Shimozuma, "Ionization and excitation collision processes
 #     of electrons in liquid water", Nuclear Instr. Methods in Physics Research B 265, 515-520 (2007)
 #
-# Momentum transfer rates:
+# Momentum transfer rates (old):
 # 2.5e15*Col("Te")^0.80/(1+0.65*Col("Te")^0.9) -> Incerti-2005
 # 7.5e14*Col("Te")^0.60/(1+0.02*Col("Te")^1.2) -> Plante
 # 4.8e14*Col("Te")^0.70/(1+0.03*Col("Te")^1.3) -> Michaud-2003
-# 2.0e14*Col("Te")^0.45/(1+0.025*Col("Te")^1.1) -> Signurell-2020
+# 2.0e14*Col("Te")^0.45/(1+0.025*Col("Te")^1.1) -> Signorell-2020
 @numba.njit(fastmath=True)
 def Get_collisional_rates(ES,wS,EL,wL,EA,wA,ne,Te=1.0,reduced_mass=1.0):
     # Note: Pass `ne=1.0` if working with the steady-state electron temperature approximation.
@@ -129,18 +119,19 @@ def Get_collisional_rates(ES,wS,EL,wL,EA,wA,ne,Te=1.0,reduced_mass=1.0):
     Te=max(Te,0.026)                                                         # make Te larger than room temp
     m=me*reduced_mass                                                        # convert reduced to actual mass in [kg]
     # calculate collision rates in units [1/s] and power gain or loss in units [eV/s]
-    # nu_mom=2.5e+15*Te**0.80/(1+0.650*Te**0.9);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Incerti-2010
-    # nu_mom=7.5e+14*Te**0.60/(1+0.020*Te**1.2);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Plante
-    # nu_mom=4.8e+14*Te**0.70/(1+0.030*Te**1.3);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Michaud-2003
-    nu_mom=2.0e+14*Te**0.45/(1+0.025*Te**1.1);P_mom =ne*nu_mom*(3*m/M_H2O)*Te   # momentum transfer Signorell
+    # nu_mom=3.413e+15*(Te**0.9073)/(1.+1.2565*(Te**0.8868))/np.sqrt(reduced_mass);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Incerti-2010
+    # nu_mom=7.470e+14*(Te**0.6085)/(1.+0.0200*(Te**1.1917))/np.sqrt(reduced_mass);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Plante
+    # nu_mom=4.968e+13*(Te**0.7150)/(1.+0.0405*(Te**1.2165))/np.sqrt(reduced_mass);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Michaud-2003 # comment DY: corrected factor of 10
+    nu_mom=2.628e+14*(Te**0.5075)/(1.+0.1240*(Te**0.8621))/np.sqrt(reduced_mass);P_mom =ne*nu_mom*(3*m/M_H2O)*Te  # momentum transfer Signorell # comment DY: corrected 1 eV offset in Signorell cross-section
     nu_vib1=1.017e+14*Te**-0.1436*np.exp(-0.1344/Te);P_vib1=ne*nu_vib1*0.20 # vib. excitation #1
     nu_vib2=2.713e+14*Te**-0.3962*np.exp(-0.4361/Te);P_vib2=ne*nu_vib2*0.48 # vib. excitation #2
     nu_vib3=7.107e+13*Te**0.07840*np.exp(-0.9280/Te);P_vib3=ne*nu_vib3*1.00 # vib. excitation #3
     nu_att =2.778e+13*Te**-0.7231*np.exp(-5.2515/Te);P_att =ne*nu_att*4.50  # attachment
     nu_exc =1.249e+13*Te**1.20480*np.exp(-8.9390/Te);P_exc =ne*nu_exc*8.70  # excitation
-    #nu_ion =4.720e+12*Te**1.84040*np.exp(-13.029/Te);P_ion =ne*nu_ion*13.1  # ionization Date
-    #nu_ion =3.715e+14*Te**0.65350*np.exp(-13.069/Te);P_ion =ne*nu_ion*13.1  # ionization Sinha
-    nu_ion =2.706e+14*Te**0.55750*np.exp(-13.1042/Te);P_ion =ne*nu_ion*13.1 # ionization Incerti
+    #nu_ion =4.720e+12*Te**1.84040*np.exp(-13.029/Te);P_ion =ne*nu_ion*13.65  # ionization Date
+    #nu_ion =3.715e+14*Te**0.65350*np.exp(-13.069/Te);P_ion =ne*nu_ion*10.0  # ionization Sinha
+    #nu_ion =2.706e+14*Te**0.55750*np.exp(-13.1042/Te);P_ion =ne*nu_ion*11.0  # ionization Incerti
+    nu_ion =2.420e+14*Te**0.87798*np.exp(-10.8236/Te);P_ion =ne*nu_ion*11.0  # ionization Incerti, Geant4 Option 6 model
     # Joule heating
     P_joule=e0*ne*nu_mom/(2*m)*(ES**2/(nu_mom**2+wS**2)+EL**2/(nu_mom**2+wL**2)+EA**2/(nu_mom**2+wA**2))
     # return lists of all collisional rate and power terms
@@ -148,6 +139,16 @@ def Get_collisional_rates(ES,wS,EL,wL,EA,wA,ne,Te=1.0,reduced_mass=1.0):
     P = [P_joule, P_mom, P_vib1, P_vib2, P_vib3, P_att, P_exc, P_ion]
     return (nu, P)
 
+# This subroutine solves the power balance equation for electrons to compute the electron temperature for
+# H2O chemistry at liquid density
+#
+# input:
+#   - E  : laser field amplitude in [V/m]
+#   - ω  : laser frequency in [rad/s]
+#   - Te : electron temperature in [eV]; optional
+#   - reduced_mass : effective e- mass fraction for the Joule-heating term
+# output:
+#   - Te : electron temperature in [eV]
 @numba.njit(fastmath=True)
 def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0,reduced_mass=1.0):
     # ES,EL and EA -> laser fields in [V/m], wS, wL and wA -> laser frequency in [rad/s]
@@ -168,8 +169,8 @@ def Get_Te_steadystate(ES,wS,EL,wL,EA,wA,Te=1.0,reduced_mass=1.0):
 #------------------------------------------------- end -------------------------------------------------
 #------------------------------------------------ NeMPI ------------------------------------------------
 @numba.njit(parallel=True, fastmath=True)
-def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # comment GMP: added array te
-    AS, AL, AA = fieldsIn                                                    # comment DHY: implemented te RK4
+def calcNeMPI(fieldsIn, wmpiOut, ve, ne, ne_ion, ne_col, te, constants):     # comment GMP: added array te
+    AS, AL, AA = fieldsIn                                                    # comment DY: implemented te RK4
     WMPI_NH2O, WMPI_NH2O_S, WMPI_NH2O_L,WMPI_NH2O_A = wmpiOut
     dt, eta, wS, wL, wA, nS, nL, nA, lS, lL, lA, NH2O, effective_mass, Uion = constants
     tlen, rlen = AS.shape
@@ -196,64 +197,95 @@ def calcNeMPI(fieldsIn, wmpiOut, ve, ne, te, constants):                     # c
 
         for j in range(tlen-1):
             # assign fields to local variables
-            ASa = np.absolute(AS[j+1,i])
-            ALa = np.absolute(AL[j+1,i])
-            AAa = np.absolute(AA[j+1,i])
+            ASa_here = np.absolute(AS[j,i])
+            ALa_here = np.absolute(AL[j,i])
+            AAa_here = np.absolute(AA[j,i])
+
+            ASa_next = np.absolute(AS[j+1,i])
+            ALa_next = np.absolute(AL[j+1,i])
+            AAa_next = np.absolute(AA[j+1,i])
+
+            ASa_half = (ASa_here+ASa_next)/2.
+            ALa_half = (ALa_here+ALa_next)/2.
+            AAa_half = (AAa_here+AAa_next)/2.
 
             # calculate OFI rates (comment GMP: use Keldysh rate by GMP)
-            WMPI_NH2O_S[j+1,i] = Get_ofi(2*ASa,wS,Uion,effective_mass)
-            WMPI_NH2O_L[j+1,i] = Get_ofi(2*ALa,wL,Uion,effective_mass)
-            WMPI_NH2O_A[j+1,i] = Get_ofi(2*AAa,wA,Uion,effective_mass)
+            WMPI_NH2O_S[j+1,i] = Get_ofi(2*ASa_next,wS,Uion,effective_mass)
+            WMPI_NH2O_L[j+1,i] = Get_ofi(2*ALa_next,wL,Uion,effective_mass)
+            WMPI_NH2O_A[j+1,i] = Get_ofi(2*AAa_next,wA,Uion,effective_mass)
             WMPI_NH2O[j+1,i] = WMPI_NH2O_S[j+1,i] + WMPI_NH2O_L[j+1,i] + WMPI_NH2O_A[j+1,i]
 
             WMPI_NH2Ohere = WMPI_NH2O[j,i]
             WMPI_NH2Onext = WMPI_NH2O[j+1,i]
-            WMPI_NH2Ohalf = (WMPI_NH2Ohere+WMPI_NH2Onext)/2.
 
-            # RK4 integration for ne and Te
-            nus, Ps = Get_collisional_rates(2*ASa,wS,2*ALa,wL,2*AAa,wA,ne[j,i],te[j,i],effective_mass)
-            ne_dot = WMPI_NH2Ohere + (nus[6]-nus[4])*ne[j,i]
-            Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne[j,i] - (te[j,i]/ne[j,i])*ne_dot
-            k1_ne = dt*ne_dot
-            k1_Te = dt*Te_dot
+            WMPI_NH2Ohalf  = Get_ofi(2*ASa_half,wS,Uion,effective_mass)
+            WMPI_NH2Ohalf += Get_ofi(2*ALa_half,wL,Uion,effective_mass)
+            WMPI_NH2Ohalf += Get_ofi(2*AAa_half,wA,Uion,effective_mass)
+
+            # RK4 integration for ne and Te, with the auxiliary electron energy function Ue := (3/2)*ne*Te.
+            Ue_here = (3/2)*ne[j,i]*te[j,i]
+            nus, Ps = Get_collisional_rates(2*ASa_here,wS,2*ALa_here,wL,2*AAa_here,wA,ne[j,i],te[j,i],effective_mass)
+
+            (ne_ion_dot, ne_col_dot) = (WMPI_NH2Ohere, (nus[6]-nus[4])*ne[j,i])
+            ne_dot = ne_ion_dot + ne_col_dot
+            Ue_dot = Ps[0] - sum(Ps[1:])
+            # Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne[j,i] - (te[j,i]/ne[j,i])*ne_dot; k1_Te = dt*Te_dot;
+
+            (k1_ne, k1_Ue, k1_ne_ion, k1_ne_col) = (dt*ne_dot, dt*Ue_dot, dt*ne_ion_dot, dt*ne_col_dot)
 
             ne2 = ne[j,i] + k1_ne/2.
-            Te2 = te[j,i] + k1_Te/2.
+            Ue2 = Ue_here + k1_Ue/2.
+            Te2 = 2*Ue2/(3*ne2)
 
-            nus, Ps = Get_collisional_rates(2*ASa,wS,2*ALa,wL,2*AAa,wA,ne2,Te2,effective_mass)
-            ne_dot = WMPI_NH2Ohalf + (nus[6]-nus[4])*ne2
-            Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne2 - (Te2/ne2)*ne_dot
-            k2_ne = dt*ne_dot
-            k2_Te = dt*Te_dot
+            nus, Ps = Get_collisional_rates(2*ASa_half,wS,2*ALa_half,wL,2*AAa_half,wA,ne2,Te2,effective_mass)
+
+            (ne_ion_dot, ne_col_dot) = (WMPI_NH2Ohalf, (nus[6]-nus[4])*ne2)
+            ne_dot = ne_ion_dot + ne_col_dot
+            Ue_dot = Ps[0] - sum(Ps[1:])
+            # Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne2 - (Te2/ne2)*ne_dot; k2_Te = dt*Te_dot;
+
+            (k2_ne, k2_Ue, k2_ne_ion, k2_ne_col) = (dt*ne_dot, dt*Ue_dot, dt*ne_ion_dot, dt*ne_col_dot)
 
             ne3 = ne[j,i] + k2_ne/2.
-            Te3 = te[j,i] + k2_Te/2.
+            Ue3 = Ue_here + k2_Ue/2.
+            Te3 = 2*Ue3/(3*ne3)
 
-            nus, Ps = Get_collisional_rates(2*ASa,wS,2*ALa,wL,2*AAa,wA,ne3,Te3,effective_mass)
-            ne_dot = WMPI_NH2Ohalf + (nus[6]-nus[4])*ne3
-            Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne3 - (Te3/ne3)*ne_dot
-            k3_ne = dt*ne_dot
-            k3_Te = dt*Te_dot
+            nus, Ps = Get_collisional_rates(2*ASa_half,wS,2*ALa_half,wL,2*AAa_half,wA,ne3,Te3,effective_mass)
+
+            (ne_ion_dot, ne_col_dot) = (WMPI_NH2Ohalf, (nus[6]-nus[4])*ne3)
+            ne_dot = ne_ion_dot + ne_col_dot
+            Ue_dot = Ps[0] - sum(Ps[1:])
+            # Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne3 - (Te3/ne3)*ne_dot; k3_Te = dt*Te_dot;
+
+            (k3_ne, k3_Ue, k3_ne_ion, k3_ne_col) = (dt*ne_dot, dt*Ue_dot, dt*ne_ion_dot, dt*ne_col_dot)
 
             ne4 = ne[j,i] + k3_ne
-            Te4 = te[j,i] + k3_Te
+            Ue4 = Ue_here + k3_Ue
+            Te4 = 2*Ue4/(3*ne4)
 
-            nus, Ps = Get_collisional_rates(2*ASa,wS,2*ALa,wL,2*AAa,wA,ne4,Te4,effective_mass)
-            ne_dot = WMPI_NH2Onext + (nus[6]-nus[4])*ne4
-            Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne4 - (Te4/ne4)*ne_dot
-            k4_ne = dt*ne_dot
-            k4_Te = dt*Te_dot
+            nus, Ps = Get_collisional_rates(2*ASa_next,wS,2*ALa_next,wL,2*AAa_next,wA,ne4,Te4,effective_mass)
 
-            # advance ne and Te
+            (ne_ion_dot, ne_col_dot) = (WMPI_NH2Onext, (nus[6]-nus[4])*ne4)
+            ne_dot = ne_ion_dot + ne_col_dot
+            Ue_dot = Ps[0] - sum(Ps[1:])
+            # Te_dot = (2/3)*(Ps[0] - sum(Ps[1:]))/ne4 - (Te4/ne4)*ne_dot; k4_Te = dt*Te_dot;
+
+            (k4_ne, k4_Ue, k4_ne_ion, k4_ne_col) = (dt*ne_dot, dt*Ue_dot, dt*ne_ion_dot, dt*ne_col_dot)
+
+            # advance ne and Te through Ue
             ne[j+1,i] = ne[j,i] + 1/6.*(k1_ne + 2.*k2_ne + 2.*k3_ne + k4_ne)
-            te[j+1,i] = te[j,i] + 1/6.*(k1_Te + 2.*k2_Te + 2.*k3_Te + k4_Te)
+            Ue_new = Ue_here + 1/6.*(k1_Ue + 2.*k2_Ue + 2.*k3_Ue + k4_Ue)
+            te[j+1,i] = 2*Ue_new/(3*ne[j+1,i])
             te[j+1,i] = max(te[j+1,i], 0.026) # Te lower-bounded by room temp
 
-            nus, Ps = Get_collisional_rates(2*ASa,wS,2*ALa,wL,2*AAa,wA,ne[j+1,i],te[j+1,i],effective_mass)
+            ne_ion[j+1,i] = ne_ion[j,i] + 1/6.*(k1_ne_ion + 2.*k2_ne_ion + 2.*k3_ne_ion + k4_ne_ion)
+            ne_col[j+1,i] = ne_col[j,i] + 1/6.*(k1_ne_col + 2.*k2_ne_col + 2.*k3_ne_col + k4_ne_col)
+
+            nus, Ps = Get_collisional_rates(2*ASa_next,wS,2*ALa_next,wL,2*AAa_next,wA,ne[j+1,i],te[j+1,i],effective_mass)
             ve[j+1,i] = nus[0]
 
 @numba.njit(parallel=True, fastmath=True)
-def calcNeMPI_Te_steady_state(fieldsIn, wmpiOut, ve, ne, te, constants):                  # comment GMP: added array te
+def calcNeMPI_Te_steadystate(fieldsIn, wmpiOut, ve, ne, te, constants):                  # comment GMP: added array te
     AS, AL, AA = fieldsIn
     WMPI_NH2O, WMPI_NH2O_S, WMPI_NH2O_L,WMPI_NH2O_A = wmpiOut
     dt, eta, wS, wL, wA, nS, nL, nA, lS, lL, lA, NH2O, effective_mass, Uion = constants

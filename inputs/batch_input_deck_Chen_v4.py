@@ -119,18 +119,18 @@ def run_pinned_simulation(args):
                 'Energy_S','Energy_L','Energy_A','Energy_T', # Individual and total energies
                 'FWHM_S','FWHM_L','FWHM_A','FWHM_T',         # Individual and total beam spot sizes (FWHM)
                 'RMSSize_S','RMSSize_L','RMSSize_A','RMSSize_T', # Individual and total beam spot sizes (RMS integrated)
-                'Ne_max','Te_max',                           # max electron density anywhere in box
+                'Ne_max','Ne_ion_max','Ne_col_max','Te_max', # max electron densities anywhere in box
                 'IS_max','IL_max','IA_max',                  # max intensities anywhere in box
                 'ES_max','EL_max','EA_max',                  # max and E fields anywhere in box
             ],
             'save_1D_z_interval': 10.0*mkm,                  # z interval at which to save 1D data
             'save_1D_which': [                               # Select which 1D data to save to file
-                # Radial max of electron density, radial intensities at temporal middle of pulse, and radial average power and fluence
-                'Ne_max','IS_mid','IL_mid','IA_mid','PL','PS','PA','FL','FS','FA',
+                # Radial max of electron densities, radial intensities at temporal middle of pulse, and radial average power and fluence
+                'Ne_max','Ne_ion_max','Ne_col_max','IS_mid','IL_mid','IA_mid','PL','PS','PA','FL','FS','FA',
             ],
             'save_2D_z_interval': 10.0*mkm,                  # z interval at which to save 2D data
             'save_2D_which': [                               # Select which 2d data to save to file
-                'Ne','ES','EL','EA',                         # Electron density and the three (complex) electric fields
+                'Ne','Ne_ion','Ne_col','ES','EL','EA',       # Electron densities and the three (complex) electric fields
             ],
 
         }
